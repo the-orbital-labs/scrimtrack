@@ -243,7 +243,7 @@ chrome.runtime.onInstalled.addListener(() => {
     ensurePathProgress(),
   ])
 
-  console.info('Scrimba Learning Tracker installed')
+  console.info('ScrimTrack installed')
 })
 
 chrome.runtime.onStartup.addListener(() => {
@@ -252,7 +252,7 @@ chrome.runtime.onStartup.addListener(() => {
     ...startupSnapshot(),
   }))
 
-  console.info('Scrimba Learning Tracker service worker started')
+  console.info('ScrimTrack service worker started')
 })
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

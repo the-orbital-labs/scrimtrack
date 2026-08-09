@@ -604,7 +604,7 @@ function App() {
       <header className="dashboard-header">
         <div>
           <p className="eyebrow">Local-first Chrome extension</p>
-          <h1>Scrimba Learning Tracker</h1>
+          <h1>ScrimTrack</h1>
           <p className="dashboard-date">{currentDateText}</p>
         </div>
         <div className="dashboard-header-actions">
@@ -1154,7 +1154,7 @@ function App() {
           <h2>Local-only data</h2>
         </div>
         <p className="settings-help-text">
-          Your learning data stays on this device in Chrome storage. Scrimba Learning Tracker does not create accounts, send learning data to a server, or run external analytics by default.
+          Your learning data stays on this device in Chrome storage. ScrimTrack does not create accounts, send learning data to a server, or run external analytics by default.
         </p>
       </section>
 

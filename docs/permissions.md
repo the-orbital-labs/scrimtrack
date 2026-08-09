@@ -1,6 +1,6 @@
 # Permissions
 
-Scrimba Learning Tracker requests the minimum permissions needed for the MVP.
+ScrimTrack requests the minimum permissions needed for the MVP.
 
 ## Requested Permissions
 

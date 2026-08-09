@@ -1552,7 +1552,7 @@ if (
     })
   }, { signal: listenerController.signal })
 
-  console.info('Scrimba Learning Tracker content script ready')
+  console.info('ScrimTrack content script ready')
 
   const cleanup = () => {
     void stopActiveSession(false)

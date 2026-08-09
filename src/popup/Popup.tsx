@@ -417,7 +417,7 @@ function Popup() {
         'popup-shell',
         settings?.trackingEnabled === false ? 'is-tracking-paused' : '',
       ].filter(Boolean).join(' ')}
-      aria-label="Scrimba Learning Tracker popup"
+      aria-label="ScrimTrack popup"
     >
       <header className="popup-header">
         <div>

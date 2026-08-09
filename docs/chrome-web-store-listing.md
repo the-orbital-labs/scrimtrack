@@ -6,7 +6,7 @@ Track active Scrimba learning time locally in your browser.
 
 ## Description
 
-Scrimba Learning Tracker helps you understand your learning pace while keeping your data on your device. It tracks active study time on Scrimba, shows daily, weekly, and monthly totals, builds streaks, displays a contribution-style heatmap, and estimates a finish date based on your current pace.
+ScrimTrack helps you understand your learning pace while keeping your data on your device. It tracks active study time on Scrimba, shows daily, weekly, and monthly totals, builds streaks, displays a contribution-style heatmap, and estimates a finish date based on your current pace.
 
 Privacy-first MVP:
 
@@ -28,4 +28,4 @@ The extension does not request browsing history, tabs, bookmarks, cookies, `webR
 
 ## Data Practices
 
-Scrimba Learning Tracker stores learning activity, sessions, streaks, settings, and path projection data locally on the user's device. The extension does not sell, transfer, or remotely process learning data.
+ScrimTrack stores learning activity, sessions, streaks, settings, and path projection data locally on the user's device. The extension does not sell, transfer, or remotely process learning data.

@@ -1,7 +1,7 @@
 import { getLocalDataExport } from './storage'
 
 const getExportFileName = (exportedAt: string): string =>
-  `scrimba-learning-tracker-${exportedAt.slice(0, 10)}.json`
+  `scrimtrack-${exportedAt.slice(0, 10)}.json`
 
 export const downloadLocalDataExport = async (): Promise<string> => {
   const exportData = await getLocalDataExport()

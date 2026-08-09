@@ -73,7 +73,7 @@ export type ResetLocalDataOptions = {
 }
 
 export type LocalDataExport = {
-  app: 'scrimba-learning-tracker'
+  app: 'scrimtrack'
   data: StorageSchema
   exportedAt: string
   schemaVersion: 1
@@ -284,7 +284,7 @@ export const getLocalDataExport = async (): Promise<LocalDataExport> => {
   ])
 
   return {
-    app: 'scrimba-learning-tracker',
+    app: 'scrimtrack',
     data: {
       extensionStatus,
       currentScrimbaPage,
