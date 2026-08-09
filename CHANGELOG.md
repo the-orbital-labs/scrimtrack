@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-09
+
+### Changed
+
+- Renamed the extension from Scrimba Learning Tracker to ScrimTrack throughout
+  the interface, metadata, and documentation.
+- Updated JSON data exports to use the ScrimTrack filename and app identifier.
+
 ## [0.2.2] - 2026-08-07
 
 ### Fixed
