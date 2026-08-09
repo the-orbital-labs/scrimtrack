@@ -13,6 +13,7 @@ export default defineConfig({
         dashboard: resolve(__dirname, 'dashboard.html'),
         background: resolve(__dirname, 'src/background.ts'),
         content: resolve(__dirname, 'src/content.ts'),
+        playback: resolve(__dirname, 'src/playback.ts'),
       },
       output: {
         entryFileNames: 'assets/[name].js',

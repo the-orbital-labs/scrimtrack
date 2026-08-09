@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ScrimTrack",
   "description": "Track active learning time on Scrimba locally in your browser.",
-  "version": "0.2.3",
+  "version": "0.2.4",
 
   "icons": {
     "16": "icon16.png",
@@ -24,6 +24,12 @@
     "type": "module"
   },
   "content_scripts": [
+    {
+      "matches": ["https://scrimba.com/*", "https://v2.scrimba.com/*"],
+      "js": ["assets/playback.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
     {
       "matches": ["https://scrimba.com/*", "https://v2.scrimba.com/*"],
       "js": ["assets/content.js"],

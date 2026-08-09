@@ -636,7 +636,7 @@ function Popup() {
               Current timeout <strong>{currentIdleTimeoutText}</strong>
             </span>
             <p className="settings-help-text">
-              Pauses tracking after Scrimba sits without mouse, keyboard, scroll, or touch activity.
+              Pauses tracking after Scrimba sits without interaction. Playing lesson media keeps tracking active while the tab is visible and focused.
             </p>
             <div className="goal-control" role="group" aria-label="Idle timeout presets">
               <div className="segmented-control idle-timeout-presets">
