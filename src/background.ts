@@ -30,6 +30,7 @@ type ActivityPulseMessage = {
   url: string
   title: string | null
   activeSeconds: number
+  isMediaPlaying?: boolean
   recordedAt: string
 }
 
@@ -48,6 +49,7 @@ type TrackingStoppedMessage = {
   url: string
   title: string | null
   activeSeconds: number
+  isMediaPlaying?: boolean
   stoppedAt: string
 }
 
@@ -57,6 +59,7 @@ type UserActivityEventType =
   | 'keydown'
   | 'scroll'
   | 'touch'
+  | 'media-playback'
 
 type UserActivityMessage = {
   type: 'scrimba:user-activity'
@@ -73,6 +76,7 @@ const userActivityEventTypes = new Set<UserActivityEventType>([
   'keydown',
   'scroll',
   'touch',
+  'media-playback',
 ])
 
 const getTime = (value: string): number => {
@@ -168,6 +172,8 @@ const isActivityPulseMessage = (
     typeof candidate.activeSeconds === 'number' &&
     Number.isFinite(candidate.activeSeconds) &&
     candidate.activeSeconds > 0 &&
+    (candidate.isMediaPlaying === undefined ||
+      typeof candidate.isMediaPlaying === 'boolean') &&
     typeof candidate.recordedAt === 'string'
   )
 }
@@ -210,6 +216,8 @@ const isTrackingStoppedMessage = (
     typeof candidate.activeSeconds === 'number' &&
     Number.isFinite(candidate.activeSeconds) &&
     candidate.activeSeconds >= 0 &&
+    (candidate.isMediaPlaying === undefined ||
+      typeof candidate.isMediaPlaying === 'boolean') &&
     typeof candidate.stoppedAt === 'string'
   )
 }
@@ -374,12 +382,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           isCurrentSession &&
           currentScrimbaPage.isActive &&
           !currentScrimbaPage.isIdle
-            ? getCountableActiveSeconds(
-                currentScrimbaPage.lastActivityAt,
-                message.stoppedAt,
-                Math.floor(message.activeSeconds),
-                settings.idleTimeoutSeconds,
-              )
+            ? message.isMediaPlaying
+              ? Math.floor(message.activeSeconds)
+              : getCountableActiveSeconds(
+                  currentScrimbaPage.lastActivityAt,
+                  message.stoppedAt,
+                  Math.floor(message.activeSeconds),
+                  settings.idleTimeoutSeconds,
+                )
             : 0
         const endedAt =
           countableActiveSeconds > 0
@@ -486,17 +496,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           return
         }
 
-        const countableActiveSeconds = getCountableActiveSeconds(
-          currentScrimbaPage.lastActivityAt,
-          message.recordedAt,
-          message.activeSeconds,
-          settings.idleTimeoutSeconds,
-        )
-        const isNowIdle = isIdleAt(
-          currentScrimbaPage.lastActivityAt,
-          message.recordedAt,
-          settings.idleTimeoutSeconds,
-        )
+        const countableActiveSeconds = message.isMediaPlaying
+          ? Math.floor(message.activeSeconds)
+          : getCountableActiveSeconds(
+              currentScrimbaPage.lastActivityAt,
+              message.recordedAt,
+              message.activeSeconds,
+              settings.idleTimeoutSeconds,
+            )
+        const isNowIdle =
+          !message.isMediaPlaying &&
+          isIdleAt(
+            currentScrimbaPage.lastActivityAt,
+            message.recordedAt,
+            settings.idleTimeoutSeconds,
+          )
         const idleAt = currentScrimbaPage.lastActivityAt
           ? getIdleAt(currentScrimbaPage.lastActivityAt, settings.idleTimeoutSeconds)
           : message.recordedAt

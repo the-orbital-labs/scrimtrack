@@ -1122,7 +1122,7 @@ function App() {
         ) : null}
 
         <p className="settings-help-text">
-          Idle timeout is how long Scrimba can sit without mouse, keyboard, scroll, or touch activity before tracking pauses.
+          Idle timeout is how long Scrimba can sit without interaction before tracking pauses. Playing lesson media keeps tracking active while the Scrimba tab is visible and focused.
         </p>
 
         <div className="goal-control" role="group" aria-label="Idle timeout presets">

@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Kept active learning-time tracking running while Scrimba lesson media is
+  playing in the visible, focused tab, including media created dynamically by
+  Scrimba's custom lesson player.
+
 ## [0.2.3] - 2026-08-09
 
 ### Changed

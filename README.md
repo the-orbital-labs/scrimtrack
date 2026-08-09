@@ -19,6 +19,7 @@ See the [changelog](CHANGELOG.md) for release history and notable changes.
 ScrimTrack helps you understand your Scrimba learning habits without accounts, syncing, or a backend server.
 
 * Tracks active learning time only on supported Scrimba URLs
+* Keeps tracking active while lesson media is playing in the visible, focused Scrimba tab
 * Shows today, this week, this month, current streak, longest streak, and all-time totals
 * Displays learning activity in a contribution-style heatmap
 * Lets you set a daily learning goal
@@ -75,7 +76,6 @@ ScrimTrack is built milestone by milestone, with a focus on simple local-first t
 
 Planned improvements include:
 
-* Refine active learning-time detection for Scrimba lessons
 * Improve the embedded dashboard and floating tracker's usability
 * Make daily goals, streaks, and progress summaries easier to understand
 * Polish the contribution heatmap and finish-date projection experience

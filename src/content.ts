@@ -223,11 +223,18 @@ type UserActivityEventType =
   | 'keydown'
   | 'scroll'
   | 'touch'
+  | 'media-playback'
 
 type RuntimeResponse = {
   isIdle?: boolean
   ok?: boolean
   trackingEnabled?: boolean
+}
+
+type PagePlaybackStateMessage = {
+  source: 'scrimtrack-page-playback'
+  isPlaying: boolean
+  observedAt: number
 }
 
 type DashboardPlacement = {
@@ -243,6 +250,10 @@ const dashboardTabId = 'scrimtrack-dashboard-tab'
 const embeddedDashboardHostId = 'scrimtrack-embedded-dashboard'
 const widgetPositionStorageKey = 'widgetPosition'
 const widgetViewportMargin = 16
+const mediaPlaybackCheckIntervalMs = 1_000
+const mediaPlaybackHeartbeatIntervalMs = 15_000
+const mediaPlaybackProgressThresholdSeconds = 0.05
+const pagePlaybackStateMaxAgeMs = 3_000
 
 if (
   isScrimbaUrl(window.location.href) &&
@@ -262,9 +273,14 @@ if (
   let lastActivityMessageAt = 0
   let lastAccountedAt = 0
   let trackingTickIntervalId: number | null = null
+  let mediaPlaybackCheckIntervalId: number | null = null
   let widgetRefreshIntervalId: number | null = null
   let isTrackingActive = false
   let isTrackingIdle = false
+  let isMediaPlaybackActive = false
+  let isPagePlaybackActive = false
+  let lastPagePlaybackStateAt = 0
+  let lastMediaPlaybackHeartbeatAt = 0
   let isWidgetRefreshing = false
   let dashboardIntegrationObserver: MutationObserver | null = null
   let dashboardIntegrationFrameId: number | null = null
@@ -277,6 +293,7 @@ if (
     displayPriority: string
     element: HTMLElement
   }> = []
+  const observedMediaTimes = new WeakMap<HTMLMediaElement, number>()
 
   document.documentElement.dataset.scrimbaLearningTracker = 'active'
 
@@ -323,6 +340,16 @@ if (
 
     window.clearInterval(trackingTickIntervalId)
     trackingTickIntervalId = null
+  }
+
+  const stopMediaPlaybackMonitor = () => {
+    if (mediaPlaybackCheckIntervalId === null) {
+      return
+    }
+
+    window.clearInterval(mediaPlaybackCheckIntervalId)
+    mediaPlaybackCheckIntervalId = null
+    isMediaPlaybackActive = false
   }
 
   const stopWidgetRefresh = () => {
@@ -381,6 +408,7 @@ if (
         url: window.location.href,
         title: getPageTitle(),
         activeSeconds,
+        isMediaPlaying: isMediaPlaybackActive,
         recordedAt: new Date(recordedAt).toISOString(),
       },
       (response) => handleTickResponse(sessionId, response),
@@ -484,6 +512,7 @@ if (
           url: window.location.href,
           title: getPageTitle(),
           activeSeconds,
+          isMediaPlaying: isMediaPlaybackActive,
           stoppedAt: new Date(stoppedAt).toISOString(),
         },
         () => {
@@ -537,6 +566,122 @@ if (
           startTrackingTick()
         }
       },
+    )
+  }
+
+  const getMediaElements = (): HTMLMediaElement[] => {
+    const mediaElements = Array.from(
+      document.querySelectorAll<HTMLMediaElement>('video, audio'),
+    )
+
+    document.querySelectorAll<HTMLIFrameElement>('iframe').forEach((frame) => {
+      try {
+        const frameDocument = frame.contentDocument
+
+        if (frameDocument) {
+          mediaElements.push(
+            ...frameDocument.querySelectorAll<HTMLMediaElement>('video, audio'),
+          )
+        }
+      } catch {
+        // Cross-origin frames are intentionally ignored to keep permissions minimal.
+      }
+    })
+
+    return mediaElements
+  }
+
+  const isMediaElementAdvancing = (media: HTMLMediaElement): boolean => {
+    const currentTime = media.currentTime
+    const previousTime = observedMediaTimes.get(media)
+
+    observedMediaTimes.set(media, currentTime)
+
+    if (
+      media.paused ||
+      media.ended ||
+      media.playbackRate <= 0 ||
+      media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
+    ) {
+      return false
+    }
+
+    return (
+      previousTime === undefined ||
+      currentTime - previousTime > mediaPlaybackProgressThresholdSeconds
+    )
+  }
+
+  const isMediaSessionPlaying = (): boolean => {
+    try {
+      return navigator.mediaSession?.playbackState === 'playing'
+    } catch {
+      return false
+    }
+  }
+
+  const isPagePlaybackStateMessage = (
+    value: unknown,
+  ): value is PagePlaybackStateMessage => {
+    if (typeof value !== 'object' || value === null) {
+      return false
+    }
+
+    const candidate = value as Record<string, unknown>
+
+    return (
+      candidate.source === 'scrimtrack-page-playback' &&
+      typeof candidate.isPlaying === 'boolean' &&
+      typeof candidate.observedAt === 'number'
+    )
+  }
+
+  const handlePagePlaybackState = (event: MessageEvent) => {
+    if (
+      event.source !== window ||
+      event.origin !== window.location.origin ||
+      !isPagePlaybackStateMessage(event.data)
+    ) {
+      return
+    }
+
+    isPagePlaybackActive = event.data.isPlaying
+    lastPagePlaybackStateAt = Date.now()
+  }
+
+  const checkMediaPlayback = () => {
+    const now = Date.now()
+    const hasActivePagePlayback =
+      isPagePlaybackActive &&
+      now - lastPagePlaybackStateAt <= pagePlaybackStateMaxAgeMs
+    const isPlaying =
+      isPageActive() &&
+      (hasActivePagePlayback ||
+        isMediaSessionPlaying() ||
+        getMediaElements().some(isMediaElementAdvancing))
+
+    isMediaPlaybackActive = isPlaying
+
+    if (
+      !isPlaying ||
+      now - lastMediaPlaybackHeartbeatAt < mediaPlaybackHeartbeatIntervalMs
+    ) {
+      return
+    }
+
+    lastMediaPlaybackHeartbeatAt = now
+    sendUserActivity('media-playback')
+  }
+
+  const startMediaPlaybackMonitor = () => {
+    if (mediaPlaybackCheckIntervalId !== null) {
+      return
+    }
+
+    checkMediaPlayback()
+    mediaPlaybackCheckIntervalId = window.setInterval(
+      checkMediaPlayback,
+      mediaPlaybackCheckIntervalMs,
     )
   }
 
@@ -1556,6 +1701,7 @@ if (
 
   const cleanup = () => {
     void stopActiveSession(false)
+    stopMediaPlaybackMonitor()
     stopWidgetRefresh()
     dashboardIntegrationObserver?.disconnect()
 
@@ -1614,6 +1760,7 @@ if (
     }
   }
 
+  startMediaPlaybackMonitor()
   startActiveSession()
   refreshWidget()
   startDashboardIntegration()
@@ -1631,6 +1778,7 @@ if (
     { capture: true, signal: listenerController.signal },
   )
   document.addEventListener('visibilitychange', syncTrackingState, listenerOptions)
+  window.addEventListener('message', handlePagePlaybackState, listenerOptions)
   document.addEventListener(
     'mousemove',
     () => sendUserActivity('mousemove'),
