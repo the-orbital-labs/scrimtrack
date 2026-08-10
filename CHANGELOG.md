@@ -7,6 +7,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-08-11
+
+### Fixed
+
+- Fixed current and longest streaks to count consecutive days with tracked
+  Scrimba activity instead of only days where the daily goal was completed.
+- Recalculated streaks from saved local activity after updates and browser
+  startup so existing practice days are reflected immediately.
+- Updated streak status and monthly recap wording to distinguish learning
+  streaks from daily-goal completion.
+
 ## [0.2.4] - 2026-08-10
 
 ### Fixed
