@@ -6,9 +6,13 @@ Track active Scrimba learning time locally in your browser.
 
 ## Description
 
-ScrimTrack helps you understand your learning pace while keeping your data on your device. It tracks active study time on Scrimba, shows daily, weekly, and monthly totals, builds streaks, displays a contribution-style heatmap, and estimates a finish date based on your current pace.
+ScrimTrack is a local-first learning tracker for Scrimba. It tracks active learning time and gives you a clear view of your daily, weekly, and monthly progress, learning goals, streaks, and consistency.
 
-Privacy-first MVP:
+Open the complete dashboard directly inside Scrimba, or use the draggable floating widget to check your progress without leaving the page. Lesson playback remains actively tracked without requiring mouse or keyboard movement, provided the Scrimba tab is visible and focused.
+
+Your learning data stays on your device. No account or backend is required.
+
+Privacy features:
 
 - Learning activity is stored locally with `chrome.storage.local`.
 - No account is required.
@@ -18,6 +22,13 @@ Privacy-first MVP:
 - The extension only runs on `https://scrimba.com/*` and `https://v2.scrimba.com/*`.
 
 You can export your local data as JSON or reset it from the extension settings.
+
+## What's New in Version 0.2.4
+
+- Fixed lesson tracking incorrectly switching to idle while Scrimba media is playing.
+- Playback now keeps tracking active without requiring mouse or keyboard movement.
+- Tracking still pauses normally when playback stops or the Scrimba tab is no longer active.
+- No new permissions are required.
 
 ## Permissions
 
