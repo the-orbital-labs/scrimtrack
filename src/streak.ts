@@ -41,24 +41,22 @@ const isPreviousLocalDate = (
   )
 }
 
-const calculateLongestCompletedStreak = (
+const calculateLongestActiveStreak = (
   activities: Record<string, DailyActivity>,
 ): number => {
-  const sortedActivities = Object.values(activities).sort((a, b) =>
-    a.date.localeCompare(b.date),
-  )
+  const sortedActiveDates = [
+    ...new Set(
+      Object.values(activities)
+        .filter((activity) => activity.activeSeconds > 0)
+        .map((activity) => activity.date),
+    ),
+  ].sort()
   let longestStreak = 0
   let rollingStreak = 0
   let previousDate: Date | null = null
 
-  for (const activity of sortedActivities) {
-    const currentDate = parseLocalDateKey(activity.date)
-
-    if (!activity.goalCompleted) {
-      rollingStreak = 0
-      previousDate = currentDate
-      continue
-    }
+  for (const dateKey of sortedActiveDates) {
+    const currentDate = parseLocalDateKey(dateKey)
 
     rollingStreak = isPreviousLocalDate(previousDate, currentDate)
       ? rollingStreak + 1
@@ -74,21 +72,21 @@ export const calculateStreakStatus = (
   activities: Record<string, DailyActivity>,
   today: string,
 ): StreakStatus => {
-  const completedDates = new Set(
+  const activeDates = new Set(
     Object.values(activities)
-      .filter((activity) => activity.goalCompleted)
+      .filter((activity) => activity.activeSeconds > 0)
       .map((activity) => activity.date),
   )
-  const longestStreak = calculateLongestCompletedStreak(activities)
+  const longestStreak = calculateLongestActiveStreak(activities)
 
   let currentStreak = 0
-  const currentStreakStartDate = completedDates.has(today)
+  const currentStreakStartDate = activeDates.has(today)
     ? today
     : getPreviousLocalDateKey(today)
 
   for (
     let cursor = parseLocalDateKey(currentStreakStartDate);
-    completedDates.has(getLocalDateKey(cursor));
+    activeDates.has(getLocalDateKey(cursor));
     cursor.setDate(cursor.getDate() - 1)
   ) {
     currentStreak += 1

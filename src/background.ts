@@ -1,6 +1,7 @@
 import {
   addActiveSecondsForInterval,
   closeLearningSession,
+  recalculateStreakStatus,
   setLearningSessionActiveState,
   startLearningSession,
 } from './activity'
@@ -249,16 +250,20 @@ chrome.runtime.onInstalled.addListener(() => {
     })),
     ensureUserSettings(),
     ensurePathProgress(),
+    recalculateStreakStatus(),
   ])
 
   console.info('ScrimTrack installed')
 })
 
 chrome.runtime.onStartup.addListener(() => {
-  void updateStorageValue('extensionStatus', (extensionStatus) => ({
-    ...extensionStatus,
-    ...startupSnapshot(),
-  }))
+  void Promise.all([
+    updateStorageValue('extensionStatus', (extensionStatus) => ({
+      ...extensionStatus,
+      ...startupSnapshot(),
+    })),
+    recalculateStreakStatus(),
+  ])
 
   console.info('ScrimTrack service worker started')
 })

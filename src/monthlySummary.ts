@@ -98,12 +98,12 @@ const getBestWeek = (activities: DailyActivity[]): WeekBucket | null => {
   }, null)
 }
 
-const getLongestCompletedStreak = (activities: DailyActivity[]): number => {
+const getLongestActiveStreak = (activities: DailyActivity[]): number => {
   let currentStreak = 0
   let longestStreak = 0
 
   for (const activity of activities) {
-    if (activity.goalCompleted) {
+    if (activity.activeSeconds > 0) {
       currentStreak += 1
       longestStreak = Math.max(longestStreak, currentStreak)
       continue
@@ -146,7 +146,7 @@ export const getCurrentMonthSummary = async (
         label: getWeekLabel(bestActivityWeek),
       }
     : null
-  const longestStreak = getLongestCompletedStreak(activities)
+  const longestStreak = getLongestActiveStreak(activities)
   const summaryText =
     activeSeconds > 0
       ? [
@@ -157,12 +157,12 @@ export const getCurrentMonthSummary = async (
           bestDay
             ? `Your best day was ${bestDay.label} with ${formatActiveTime(bestDay.activeSeconds)}.`
             : 'No best day yet this month.',
-          `Your longest goal streak this month is ${pluralize(longestStreak, 'day')}.`,
+          `Your longest learning streak this month is ${pluralize(longestStreak, 'day')}.`,
         ]
       : [
           'No Scrimba study time recorded this month yet.',
           'Best week and best day will appear after your next session.',
-          `Your longest goal streak this month is ${pluralize(longestStreak, 'day')}.`,
+          `Your longest learning streak this month is ${pluralize(longestStreak, 'day')}.`,
         ]
 
   return {

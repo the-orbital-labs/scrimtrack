@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
 import './App.css'
-import { getActivityForDate, getLocalDateKey } from './activity'
+import {
+  getActivityForDate,
+  getLocalDateKey,
+  recalculateStreakStatus,
+} from './activity'
 import { downloadLocalDataExport } from './dataExport'
 import { formatActiveTime, getGoalProgress, secondsToMinutes } from './goalProgress'
 import { getDashboardHeatmapGrid } from './heatmap'
@@ -234,7 +238,7 @@ function App() {
     void Promise.all([
       getUserSettings(),
       getActivityForDate(new Date()),
-      getStorageValue('streakStatus'),
+      recalculateStreakStatus(),
       getDashboardHeatmapGrid(),
       getCurrentWeekTimeStats(),
       getCurrentMonthTimeStats(),
@@ -539,7 +543,7 @@ function App() {
   const monthlyBestDayText = monthlySummary?.bestDay
     ? `${monthlySummary.bestDay.label} - ${formatActiveTime(monthlySummary.bestDay.activeSeconds)}`
     : 'No best day yet'
-  const streakDisplay = getStreakDisplayState(streakStatus, goalProgress)
+  const streakDisplay = getStreakDisplayState(streakStatus, todayActiveSeconds)
   const heatmapDays =
     heatmapGrid?.weeks
       .flatMap((week) => week.days)

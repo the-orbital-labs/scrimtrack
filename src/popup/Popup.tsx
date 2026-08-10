@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import '../App.css'
-import { getActivityForDate } from '../activity'
+import { getActivityForDate, recalculateStreakStatus } from '../activity'
 import { downloadLocalDataExport } from '../dataExport'
 import { formatActiveTime, getGoalProgress, secondsToMinutes } from '../goalProgress'
 import { getPopupHeatmapGrid } from '../heatmap'
@@ -140,7 +140,7 @@ function Popup() {
     void Promise.all([
       getUserSettings(),
       getActivityForDate(new Date()),
-      getStorageValue('streakStatus'),
+      recalculateStreakStatus(),
       getPopupHeatmapGrid(),
       getCurrentWeekTimeStats(),
       getPathProgress(),
@@ -407,7 +407,10 @@ function Popup() {
   const completedHoursText = formatPathHours(completedHours)
   const remainingHoursText =
     remainingHours <= 0 ? 'Path complete' : formatPathHours(remainingHours)
-  const streakDisplay = getStreakDisplayState(streakStatus, goalProgress)
+  const streakDisplay = getStreakDisplayState(
+    streakStatus,
+    goalProgress.activeSeconds,
+  )
   const currentStreak = streakStatus?.currentStreak ?? 0
   const currentStreakUnit = currentStreak === 1 ? 'day' : 'days'
 
