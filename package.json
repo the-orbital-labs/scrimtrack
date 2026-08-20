@@ -2,6 +2,18 @@
   "name": "scrimtrack",
   "private": true,
   "version": "0.0.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/the-orbital-labs/scrimtrack.git"
+  },
+  "bugs": {
+    "url": "https://github.com/the-orbital-labs/scrimtrack/issues"
+  },
+  "homepage": "https://theorbitallabs.com/scrimtrack",
+  "engines": {
+    "node": ">=24"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

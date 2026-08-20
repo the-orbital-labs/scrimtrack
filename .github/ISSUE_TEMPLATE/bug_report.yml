@@ -1,0 +1,103 @@
+name: Bug report
+description: Report a reproducible problem with ScrimTrack
+title: "[Bug]: "
+labels:
+  - bug
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve ScrimTrack. Search existing issues before submitting a report, and remove personal learning data from screenshots and logs.
+
+  - type: input
+    id: version
+    attributes:
+      label: ScrimTrack version
+      description: Find this on the Chrome extensions page or in ScrimTrack's dashboard.
+      placeholder: "0.2.5"
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Browser and operating system
+      placeholder: "Chrome 140 on Windows 11"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scrimba-site
+    attributes:
+      label: Scrimba site
+      description: Where does the problem occur?
+      options:
+        - scrimba.com
+        - v2.scrimba.com
+        - Both
+        - Not site-specific
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Active-time tracking
+        - Daily, weekly, or monthly statistics
+        - Streaks or heatmap
+        - Popup or embedded dashboard
+        - Daily goal or path projection
+        - Data export, reset, or storage
+        - Permissions or privacy
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem description
+      description: Explain what went wrong and when you first noticed it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect ScrimTrack to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots or sanitized logs
+      description: Add supporting material if useful. Remove learning history, credentials, and other private information.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for the same problem.
+          required: true
+        - label: I removed private information from screenshots and logs.
+          required: true
+        - label: I am using the latest available ScrimTrack version, or I explained why I cannot update.
+          required: true
