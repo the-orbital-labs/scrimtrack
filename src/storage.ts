@@ -43,6 +43,7 @@ export type StreakStatus = {
 
 export type UserSettings = {
   dailyGoalSeconds: number
+  floatingWidgetVisible: boolean
   idleTimeoutSeconds: number
   trackingEnabled: boolean
   timezone: string
@@ -94,6 +95,7 @@ const defaultStorageValues: StorageSchema = {
   },
   userSettings: {
     dailyGoalSeconds: 30 * 60,
+    floatingWidgetVisible: true,
     idleTimeoutSeconds: 2 * 60,
     trackingEnabled: true,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',

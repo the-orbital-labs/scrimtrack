@@ -35,6 +35,7 @@ import {
 import { getStorageValue, resetLocalData } from '../storage'
 import type {
   AverageWindowDays,
+  CurrentScrimbaPage,
   DailyActivity,
   PathProgress,
   StreakStatus,
@@ -43,6 +44,7 @@ import type {
 import { getStreakDisplayState } from '../streakDisplay'
 import { getCurrentWeekTimeStats } from '../timeStats'
 import type { WeeklyTimeStats } from '../timeStats'
+import { useLiveActivitySeconds } from '../useLiveActivitySeconds'
 
 const dailyGoalPresetMinutes = [15, 30, 45, 60] as const
 const idleTimeoutPresetMinutes = [1, 2, 5, 10] as const
@@ -79,6 +81,8 @@ const formatTimeoutMinutes = (minutes: number): string =>
 function Popup() {
   const [settings, setSettings] = useState<UserSettings | null>(null)
   const [todayActivity, setTodayActivity] = useState<DailyActivity | null>(null)
+  const [currentScrimbaPage, setCurrentScrimbaPage] =
+    useState<CurrentScrimbaPage>(null)
   const [streakStatus, setStreakStatus] = useState<StreakStatus | null>(null)
   const [heatmapGrid, setHeatmapGrid] = useState<HeatmapGrid | null>(null)
   const [weeklyTimeStats, setWeeklyTimeStats] = useState<WeeklyTimeStats | null>(null)
@@ -124,18 +128,56 @@ function Popup() {
       getPopupHeatmapGrid(),
       getCurrentWeekTimeStats(),
       getPathProjection(),
-    ]).then(([activity, streak, heatmap, weekStats, projection]) => {
+      getStorageValue('currentScrimbaPage'),
+    ]).then(([activity, streak, heatmap, weekStats, projection, currentPage]) => {
       setTodayActivity(activity)
       setStreakStatus(streak)
       setHeatmapGrid(heatmap)
       setWeeklyTimeStats(weekStats)
+      setCurrentScrimbaPage(currentPage)
       syncProjection(projection)
     })
   }
 
   useEffect(() => {
     let isMounted = true
+    let isStorageListenerAttached = false
     const refreshIntervalId = window.setInterval(refreshTodayActivity, 5_000)
+    const handleStorageChange = (
+      changes: Record<string, { newValue?: unknown; oldValue?: unknown }>,
+      areaName: string,
+    ) => {
+      if (areaName !== 'local') {
+        return
+      }
+
+      const currentPageChange = changes.currentScrimbaPage
+
+      if (currentPageChange && 'newValue' in currentPageChange) {
+        setCurrentScrimbaPage(
+          (currentPageChange.newValue as CurrentScrimbaPage | undefined) ?? null,
+        )
+      }
+
+      const nextSettings = changes.userSettings?.newValue
+
+      if (nextSettings && typeof nextSettings === 'object') {
+        setSettings((currentSettings) =>
+          currentSettings
+            ? { ...currentSettings, ...(nextSettings as Partial<UserSettings>) }
+            : currentSettings,
+        )
+      }
+    }
+
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+        chrome.storage.onChanged.addListener(handleStorageChange)
+        isStorageListenerAttached = true
+      }
+    } catch {
+      isStorageListenerAttached = false
+    }
 
     void Promise.all([
       getUserSettings(),
@@ -145,6 +187,7 @@ function Popup() {
       getCurrentWeekTimeStats(),
       getPathProgress(),
       getPathProjection(),
+      getStorageValue('currentScrimbaPage'),
     ]).then(
       ([
         loadedSettings,
@@ -154,6 +197,7 @@ function Popup() {
         loadedWeeklyTimeStats,
         loadedPathProgress,
         projection,
+        loadedCurrentScrimbaPage,
       ]) => {
         if (!isMounted) {
           return
@@ -165,6 +209,7 @@ function Popup() {
         setHeatmapGrid(loadedHeatmapGrid)
         setWeeklyTimeStats(loadedWeeklyTimeStats)
         setPathProgress(loadedPathProgress)
+        setCurrentScrimbaPage(loadedCurrentScrimbaPage)
         syncProjection(projection)
         setDailyGoalMinutes(
           String(secondsToMinutes(loadedSettings.dailyGoalSeconds)),
@@ -182,6 +227,13 @@ function Popup() {
     return () => {
       isMounted = false
       window.clearInterval(refreshIntervalId)
+      if (isStorageListenerAttached) {
+        try {
+          chrome.storage.onChanged.removeListener(handleStorageChange)
+        } catch {
+          // The extension context may already be invalidated during cleanup.
+        }
+      }
     }
   }, [])
 
@@ -381,8 +433,30 @@ function Popup() {
     })
   }
 
-  const goalProgress = getGoalProgress(todayActivity, settings)
-  const todayActiveTime = formatActiveTime(todayActivity?.activeSeconds ?? 0)
+  const isLiveActivityRunning =
+    settings?.trackingEnabled !== false &&
+    currentScrimbaPage?.isActive === true &&
+    !currentScrimbaPage.isIdle
+  const liveTodayActiveSeconds = useLiveActivitySeconds(
+    todayActivity,
+    isLiveActivityRunning,
+  )
+  const displayedTodayActivity = todayActivity
+    ? {
+        ...todayActivity,
+        activeSeconds: liveTodayActiveSeconds,
+        goalCompleted:
+          todayActivity.goalCompleted ||
+          (todayActivity.goalSeconds > 0 &&
+            liveTodayActiveSeconds >= todayActivity.goalSeconds),
+      }
+    : null
+  const liveActivityOffset = Math.max(
+    0,
+    liveTodayActiveSeconds - (todayActivity?.activeSeconds ?? 0),
+  )
+  const goalProgress = getGoalProgress(displayedTodayActivity, settings)
+  const todayActiveTime = formatActiveTime(liveTodayActiveSeconds)
   const todayGoalTime =
     goalProgress.goalSeconds > 0 ? formatActiveTime(goalProgress.goalSeconds) : 'Not set'
   const currentDailyGoalText =
@@ -399,9 +473,14 @@ function Popup() {
       : goalProgress.isComplete
         ? 'Goal complete'
         : `${formatActiveTime(goalProgress.remainingSeconds)} remaining`
-  const weeklyActiveTime = formatActiveTime(weeklyTimeStats?.activeSeconds ?? 0)
+  const weeklyActiveTime = formatActiveTime(
+    (weeklyTimeStats?.activeSeconds ?? 0) + liveActivityOffset,
+  )
   const weeklyAverageText = `${formatActiveTime(
-    weeklyTimeStats?.averageSecondsPerDay ?? 0,
+    Math.floor(
+      ((weeklyTimeStats?.activeSeconds ?? 0) + liveActivityOffset) /
+        (weeklyTimeStats?.dayCount || 1),
+    ),
   )} avg/day`
   const averagePaceText = formatHoursPerDay(averagePaceSeconds)
   const completedHoursText = formatPathHours(completedHours)

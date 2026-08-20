@@ -26,6 +26,26 @@ declare const chrome: {
     ) => void
   }
   storage: {
+    onChanged: {
+      addListener: (
+        callback: (
+          changes: Record<
+            string,
+            { newValue?: unknown; oldValue?: unknown }
+          >,
+          areaName: string,
+        ) => void,
+      ) => void
+      removeListener: (
+        callback: (
+          changes: Record<
+            string,
+            { newValue?: unknown; oldValue?: unknown }
+          >,
+          areaName: string,
+        ) => void,
+      ) => void
+    }
     local: {
       get: (
         keys: string | string[] | Record<string, unknown> | null,

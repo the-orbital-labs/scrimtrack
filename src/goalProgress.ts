@@ -14,22 +14,23 @@ export const secondsToMinutes = (seconds: number): number =>
 
 export const formatActiveTime = (seconds: number): string => {
   const normalizedSeconds = Math.max(0, Math.floor(seconds))
-  const minutes = secondsToMinutes(normalizedSeconds)
+  const totalMinutes = secondsToMinutes(normalizedSeconds)
+  const remainingSeconds = normalizedSeconds % 60
 
-  if (normalizedSeconds > 0 && minutes === 0) {
-    return '<1m'
+  if (totalMinutes === 0) {
+    return `${remainingSeconds}s`
   }
 
-  if (minutes < 60) {
-    return `${minutes}m`
+  const secondsText = String(remainingSeconds).padStart(2, '0')
+
+  if (totalMinutes < 60) {
+    return `${totalMinutes}m ${secondsText}s`
   }
 
-  const hours = Math.floor(minutes / 60)
-  const remainingMinutes = minutes % 60
+  const hours = Math.floor(totalMinutes / 60)
+  const remainingMinutes = totalMinutes % 60
 
-  return remainingMinutes > 0
-    ? `${hours}h ${remainingMinutes}m`
-    : `${hours}h`
+  return `${hours}h ${remainingMinutes}m ${secondsText}s`
 }
 
 export const formatMinutes = formatActiveTime
