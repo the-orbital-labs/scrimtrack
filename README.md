@@ -6,7 +6,7 @@ It tracks active Scrimba time, shows daily/weekly/monthly progress, builds strea
 
 ## Install
 
-[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/the-orbital-labs/scrim-track/blob/main/LICENSE)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/the-orbital-labs/scrimtrack/blob/main/LICENSE)
 
 Install ScrimTrack from the Chrome Web Store:
 
@@ -87,6 +87,11 @@ ScrimTrack will stay local-first and focused on Scrimba learning. Backend servic
 
 Feedback, bug reports, and focused contributions are welcome.
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the complete contribution workflow.
+All project participation is governed by the
+[Code of Conduct](CODE_OF_CONDUCT.md). Report suspected vulnerabilities
+privately by following the [Security Policy](SECURITY.md).
+
 Good issues or pull requests include:
 
 * Bugs in Scrimba time tracking
@@ -108,9 +113,9 @@ Before contributing:
 To build and install ScrimTrack locally:
 
 ```bash
-git clone https://github.com/the-orbital-labs/scrim-track.git
-cd scrim-track
-npm install
+git clone https://github.com/the-orbital-labs/scrimtrack.git
+cd scrimtrack
+npm ci
 npm run build
 ```
 

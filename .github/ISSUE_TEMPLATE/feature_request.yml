@@ -1,0 +1,77 @@
+name: Feature request
+description: Suggest a focused improvement that fits ScrimTrack's roadmap
+title: "[Feature]: "
+labels:
+  - enhancement
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. ScrimTrack remains local-first, tracks only supported Scrimba URLs, and keeps browser permissions minimal.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or need
+      description: What problem would this feature solve, and who would benefit?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior or interface you would like to see.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any workarounds or alternative approaches you considered.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Feature area
+      options:
+        - Active-time tracking
+        - Statistics, streaks, or heatmap
+        - Popup or embedded dashboard
+        - Daily goal or path projection
+        - Data export, reset, or storage
+        - Accessibility or usability
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: privacy-impact
+    attributes:
+      label: Permissions, privacy, and stored-data impact
+      description: Explain any expected impact, or enter "None".
+      placeholder: None
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add mockups, examples, or related links if useful.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for a similar request.
+          required: true
+        - label: I reviewed the project scope in CONTRIBUTING.md.
+          required: true
+        - label: This request keeps ScrimTrack local-first and focused on Scrimba learning.
+          required: true
