@@ -32,12 +32,14 @@ import type { PathProjection } from './projection'
 import {
   getUserSettings,
   saveDailyGoal,
+  saveFloatingWidgetVisible,
   saveIdleTimeout,
   saveTrackingEnabled,
 } from './settings'
 import { getStorageValue, resetLocalData } from './storage'
 import type {
   AverageWindowDays,
+  CurrentScrimbaPage,
   DailyActivity,
   PathProgress,
   StreakStatus,
@@ -54,6 +56,7 @@ import { getCurrentMonthSummary } from './monthlySummary'
 import type { MonthlySummary } from './monthlySummary'
 import { getCurrentWeekSummary } from './weeklySummary'
 import type { WeeklySummary } from './weeklySummary'
+import { useLiveActivitySeconds } from './useLiveActivitySeconds'
 
 const dailyGoalPresetMinutes = [15, 30, 45, 60] as const
 const idleTimeoutPresetMinutes = [1, 2, 5, 10] as const
@@ -159,6 +162,8 @@ function SummaryStatCard({
 function App() {
   const [settings, setSettings] = useState<UserSettings | null>(null)
   const [todayActivity, setTodayActivity] = useState<DailyActivity | null>(null)
+  const [currentScrimbaPage, setCurrentScrimbaPage] =
+    useState<CurrentScrimbaPage>(null)
   const [streakStatus, setStreakStatus] = useState<StreakStatus | null>(null)
   const [heatmapGrid, setHeatmapGrid] = useState<HeatmapGrid | null>(null)
   const [weeklyTimeStats, setWeeklyTimeStats] = useState<WeeklyTimeStats | null>(null)
@@ -206,6 +211,7 @@ function App() {
       getCurrentWeekSummary(),
       getCurrentMonthSummary(),
       getPathProjection(),
+      getStorageValue('currentScrimbaPage'),
     ]).then(
       ([
         activity,
@@ -217,6 +223,7 @@ function App() {
         summary,
         monthSummary,
         projection,
+        currentPage,
       ]) => {
         setTodayActivity(activity)
         setStreakStatus(streak)
@@ -226,6 +233,7 @@ function App() {
         setAllTimeStats(allStats)
         setWeeklySummary(summary)
         setMonthlySummary(monthSummary)
+        setCurrentScrimbaPage(currentPage)
         syncProjection(projection)
       },
     )
@@ -233,7 +241,45 @@ function App() {
 
   useEffect(() => {
     let isMounted = true
+    let isSettingsListenerAttached = false
     const refreshIntervalId = window.setInterval(refreshTodayActivity, 5_000)
+    const handleSettingsChange = (
+      changes: Record<string, { newValue?: unknown; oldValue?: unknown }>,
+      areaName: string,
+    ) => {
+      if (areaName !== 'local') {
+        return
+      }
+
+      const currentPageChange = changes.currentScrimbaPage
+
+      if (currentPageChange && 'newValue' in currentPageChange) {
+        setCurrentScrimbaPage(
+          (currentPageChange.newValue as CurrentScrimbaPage | undefined) ?? null,
+        )
+      }
+
+      const nextSettings = changes.userSettings?.newValue
+
+      if (!nextSettings || typeof nextSettings !== 'object') {
+        return
+      }
+
+      setSettings((currentSettings) =>
+        currentSettings
+          ? { ...currentSettings, ...(nextSettings as Partial<UserSettings>) }
+          : currentSettings,
+      )
+    }
+
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+        chrome.storage.onChanged.addListener(handleSettingsChange)
+        isSettingsListenerAttached = true
+      }
+    } catch {
+      isSettingsListenerAttached = false
+    }
 
     void Promise.all([
       getUserSettings(),
@@ -247,6 +293,7 @@ function App() {
       getCurrentMonthSummary(),
       getPathProgress(),
       getPathProjection(),
+      getStorageValue('currentScrimbaPage'),
     ]).then(
       ([
         loadedSettings,
@@ -260,6 +307,7 @@ function App() {
         loadedMonthlySummary,
         loadedPathProgress,
         projection,
+        loadedCurrentScrimbaPage,
       ]) => {
         if (!isMounted) {
           return
@@ -275,6 +323,7 @@ function App() {
         setWeeklySummary(loadedWeeklySummary)
         setMonthlySummary(loadedMonthlySummary)
         setPathProgress(loadedPathProgress)
+        setCurrentScrimbaPage(loadedCurrentScrimbaPage)
         syncProjection(projection)
         setPathName(loadedPathProgress.pathName)
         setTotalEstimatedHours(String(loadedPathProgress.totalEstimatedHours))
@@ -291,6 +340,13 @@ function App() {
     return () => {
       isMounted = false
       window.clearInterval(refreshIntervalId)
+      if (isSettingsListenerAttached) {
+        try {
+          chrome.storage.onChanged.removeListener(handleSettingsChange)
+        } catch {
+          // The extension context may already be invalidated during cleanup.
+        }
+      }
     }
   }, [])
 
@@ -363,6 +419,15 @@ function App() {
       )
       refreshTodayActivity()
     })
+  }
+
+  const openFloatingWidget = () => {
+    if (!settings || settings.floatingWidgetVisible) {
+      return
+    }
+
+    setSettings({ ...settings, floatingWidgetVisible: true })
+    void saveFloatingWidgetVisible(true).then(setSettings)
   }
 
   const refreshProjection = () => {
@@ -489,11 +554,36 @@ function App() {
     })
   }
 
-  const goalProgress = getGoalProgress(todayActivity, settings)
+  const isLiveActivityRunning =
+    settings?.trackingEnabled !== false &&
+    currentScrimbaPage?.isActive === true &&
+    !currentScrimbaPage.isIdle
+  const liveTodayActiveSeconds = useLiveActivitySeconds(
+    todayActivity,
+    isLiveActivityRunning,
+  )
+  const displayedTodayActivity = todayActivity
+    ? {
+        ...todayActivity,
+        activeSeconds: liveTodayActiveSeconds,
+        goalCompleted:
+          todayActivity.goalCompleted ||
+          (todayActivity.goalSeconds > 0 &&
+            liveTodayActiveSeconds >= todayActivity.goalSeconds),
+      }
+    : null
+  const liveActivityOffset = Math.max(
+    0,
+    liveTodayActiveSeconds - (todayActivity?.activeSeconds ?? 0),
+  )
+  const goalProgress = getGoalProgress(displayedTodayActivity, settings)
   const todayActiveSeconds = goalProgress.activeSeconds
-  const weeklyActiveSeconds = weeklyTimeStats?.activeSeconds ?? 0
-  const monthlyActiveSeconds = monthlyTimeStats?.activeSeconds ?? 0
-  const allTimeActiveSeconds = allTimeStats?.activeSeconds ?? 0
+  const weeklyActiveSeconds =
+    (weeklyTimeStats?.activeSeconds ?? 0) + liveActivityOffset
+  const monthlyActiveSeconds =
+    (monthlyTimeStats?.activeSeconds ?? 0) + liveActivityOffset
+  const allTimeActiveSeconds =
+    (allTimeStats?.activeSeconds ?? 0) + liveActivityOffset
   const progressText =
     goalProgress.goalSeconds > 0
       ? `${formatActiveTime(goalProgress.activeSeconds)} / ${formatActiveTime(goalProgress.goalSeconds)}`
@@ -507,7 +597,7 @@ function App() {
       ? formatActiveTime(settings.idleTimeoutSeconds)
       : 'Not set'
   const weeklyAverageText = `${formatActiveTime(
-    weeklyTimeStats?.averageSecondsPerDay ?? 0,
+    Math.floor(weeklyActiveSeconds / (weeklyTimeStats?.dayCount || 1)),
   )} avg/day`
   const monthlyActiveDaysText = `${monthlyTimeStats?.activeDays ?? 0} active days`
   const allTimeActiveDaysText = `${allTimeStats?.activeDays ?? 0} active days`
@@ -560,16 +650,29 @@ function App() {
   const selectedHeatmapDays = heatmapDays.filter(
     (day) => day.date >= selectedHeatmapStartKey && day.date <= selectedHeatmapEndKey,
   )
+  const todayDateKey = getLocalDateKey(today)
+  const selectedTodayHeatmapDay = selectedHeatmapDays.find(
+    (day) => day.date === todayDateKey,
+  )
   const selectedHeatmapActiveDays = selectedHeatmapDays.filter(
     (day) => day.activeSeconds > 0,
-  ).length
-  const selectedHeatmapActiveSeconds = selectedHeatmapDays.reduce(
-    (total, day) => total + day.activeSeconds,
-    0,
-  )
+  ).length +
+    (liveActivityOffset > 0 && selectedTodayHeatmapDay?.activeSeconds === 0
+      ? 1
+      : 0)
+  const selectedHeatmapActiveSeconds =
+    selectedHeatmapDays.reduce(
+      (total, day) => total + day.activeSeconds,
+      0,
+    ) + (selectedTodayHeatmapDay ? liveActivityOffset : 0)
   const selectedHeatmapGoalDays = selectedHeatmapDays.filter(
     (day) => day.goalCompleted,
-  ).length
+  ).length +
+    (selectedTodayHeatmapDay &&
+    !selectedTodayHeatmapDay.goalCompleted &&
+    goalProgress.isComplete
+      ? 1
+      : 0)
   const heatmapDateRangeText = heatmapGrid
     ? `${dateRangeFormatter.format(parseLocalDateKey(heatmapGrid.startDate))} to ${dateRangeFormatter.format(parseLocalDateKey(heatmapGrid.endDate))}`
     : 'Loading activity range'
@@ -615,6 +718,14 @@ function App() {
           <span className={`status-pill ${trackingStatusClass}`}>
             {trackingStatusText}
           </span>
+          <button
+            type="button"
+            className="settings-link"
+            disabled={!settings || settings.floatingWidgetVisible}
+            onClick={openFloatingWidget}
+          >
+            {settings?.floatingWidgetVisible ? 'Widget open' : 'Open widget'}
+          </button>
           <a className="settings-link" href="#dashboard-settings">
             Settings
           </a>

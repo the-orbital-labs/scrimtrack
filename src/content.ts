@@ -23,6 +23,7 @@ type DailyActivity = {
 
 type UserSettings = {
   dailyGoalSeconds: number
+  floatingWidgetVisible: boolean
   idleTimeoutSeconds: number
   trackingEnabled: boolean
   timezone: string
@@ -35,6 +36,7 @@ type WidgetPosition = {
 
 const defaultUserSettings: UserSettings = {
   dailyGoalSeconds: 30 * 60,
+  floatingWidgetVisible: true,
   idleTimeoutSeconds: 2 * 60,
   trackingEnabled: true,
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
@@ -152,27 +154,42 @@ const saveTrackingEnabled = async (
   return nextSettings
 }
 
+const saveFloatingWidgetVisible = async (
+  floatingWidgetVisible: boolean,
+): Promise<UserSettings> => {
+  const settings = await getUserSettings()
+  const nextSettings = {
+    ...settings,
+    floatingWidgetVisible,
+  }
+
+  await setStorageValue('userSettings', nextSettings)
+
+  return nextSettings
+}
+
 const secondsToMinutes = (seconds: number): number =>
   Math.floor(Math.max(0, seconds) / 60)
 
 const formatActiveTime = (seconds: number): string => {
   const normalizedSeconds = Math.max(0, Math.floor(seconds))
-  const minutes = secondsToMinutes(normalizedSeconds)
+  const totalMinutes = secondsToMinutes(normalizedSeconds)
+  const remainingSeconds = normalizedSeconds % 60
 
-  if (normalizedSeconds > 0 && minutes === 0) {
-    return '<1m'
+  if (totalMinutes === 0) {
+    return `${remainingSeconds}s`
   }
 
-  if (minutes < 60) {
-    return `${minutes}m`
+  const secondsText = String(remainingSeconds).padStart(2, '0')
+
+  if (totalMinutes < 60) {
+    return `${totalMinutes}m ${secondsText}s`
   }
 
-  const hours = Math.floor(minutes / 60)
-  const remainingMinutes = minutes % 60
+  const hours = Math.floor(totalMinutes / 60)
+  const remainingMinutes = totalMinutes % 60
 
-  return remainingMinutes > 0
-    ? `${hours}h ${remainingMinutes}m`
-    : `${hours}h`
+  return `${hours}h ${remainingMinutes}m ${secondsText}s`
 }
 
 const getGoalProgress = (
@@ -231,6 +248,11 @@ type RuntimeResponse = {
   trackingEnabled?: boolean
 }
 
+type StorageChanges = Record<
+  string,
+  { newValue?: unknown; oldValue?: unknown }
+>
+
 type PagePlaybackStateMessage = {
   source: 'scrimtrack-page-playback'
   isPlaying: boolean
@@ -275,6 +297,7 @@ if (
   let trackingTickIntervalId: number | null = null
   let mediaPlaybackCheckIntervalId: number | null = null
   let widgetRefreshIntervalId: number | null = null
+  let widgetDisplayIntervalId: number | null = null
   let isTrackingActive = false
   let isTrackingIdle = false
   let isMediaPlaybackActive = false
@@ -282,6 +305,7 @@ if (
   let lastPagePlaybackStateAt = 0
   let lastMediaPlaybackHeartbeatAt = 0
   let isWidgetRefreshing = false
+  let isWidgetTimerRunning = false
   let dashboardIntegrationObserver: MutationObserver | null = null
   let dashboardIntegrationFrameId: number | null = null
   let dashboardBoundsFrameId: number | null = null
@@ -361,6 +385,15 @@ if (
     widgetRefreshIntervalId = null
   }
 
+  const stopWidgetDisplay = () => {
+    if (widgetDisplayIntervalId === null) {
+      return
+    }
+
+    window.clearInterval(widgetDisplayIntervalId)
+    widgetDisplayIntervalId = null
+  }
+
   const markSessionStopped = (sessionId: string) => {
     if (currentSessionId !== sessionId) {
       return
@@ -368,6 +401,7 @@ if (
 
     isTrackingActive = false
     isTrackingIdle = true
+    isWidgetTimerRunning = false
     currentSessionId = null
     currentSessionStartedAt = null
     pausedSession = null
@@ -468,7 +502,9 @@ if (
           return
         }
 
+        isWidgetTimerRunning = true
         startTrackingTick()
+        refreshWidget()
       },
     )
 
@@ -492,6 +528,7 @@ if (
     currentSessionStartedAt = null
     isTrackingActive = false
     isTrackingIdle = false
+    isWidgetTimerRunning = false
     lastAccountedAt = 0
     stopTrackingTick()
 
@@ -1162,6 +1199,7 @@ if (
 
     const host = document.createElement('div')
     host.id = widgetHostId
+    host.hidden = true
     const shadow = host.attachShadow({ mode: 'open' })
 
     shadow.innerHTML = `
@@ -1174,6 +1212,10 @@ if (
           z-index: 2147483647;
           color-scheme: light;
           font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        :host([hidden]) {
+          display: none !important;
         }
 
         *, *::before, *::after {
@@ -1207,6 +1249,13 @@ if (
           cursor: grab;
           touch-action: none;
           user-select: none;
+        }
+
+        .widget-controls {
+          display: inline-flex;
+          flex: 0 0 auto;
+          align-items: center;
+          gap: 6px;
         }
 
         .brand {
@@ -1305,6 +1354,8 @@ if (
 
         .widget.is-collapsed .collapsed-line {
           display: flex;
+          cursor: default;
+          touch-action: auto;
         }
 
         .body {
@@ -1416,7 +1467,10 @@ if (
             <span class="dot" data-status-dot></span>
             <span data-collapsed-status>Tracking</span>
           </span>
-          <button class="icon-button" type="button" title="Expand" aria-label="Expand" data-expand>+</button>
+          <span class="widget-controls">
+            <button class="icon-button" type="button" title="Expand widget" aria-label="Expand widget" data-expand>+</button>
+            <button class="icon-button" type="button" title="Close widget" aria-label="Close widget" data-close>&times;</button>
+          </span>
         </div>
 
         <div class="header" data-drag-handle>
@@ -1424,7 +1478,10 @@ if (
             <span class="mark" aria-hidden="true">ST</span>
             ScrimTrack
           </span>
-          <button class="icon-button" type="button" title="Collapse" aria-label="Collapse" data-collapse>-</button>
+          <span class="widget-controls">
+            <button class="icon-button" type="button" title="Collapse widget" aria-label="Collapse widget" data-collapse>-</button>
+            <button class="icon-button" type="button" title="Close widget" aria-label="Close widget" data-close>&times;</button>
+          </span>
         </div>
 
         <div class="body">
@@ -1480,11 +1537,51 @@ if (
       openDashboard: shadow.querySelector<HTMLButtonElement>('[data-open-dashboard]'),
       collapse: shadow.querySelector<HTMLButtonElement>('[data-collapse]'),
       expand: shadow.querySelector<HTMLButtonElement>('[data-expand]'),
+      closeButtons: shadow.querySelectorAll<HTMLButtonElement>('[data-close]'),
       dragHandles: shadow.querySelectorAll<HTMLElement>('[data-drag-handle]'),
     }
   }
 
   const widget = createWidget()
+  let widgetDisplayedActiveSeconds = 0
+  let widgetDisplayDate = getLocalDateKey()
+  let widgetGoalSeconds = defaultUserSettings.dailyGoalSeconds
+  let widgetGoalCompleted = false
+  let expandedWidgetPosition: WidgetPosition | null = null
+
+  const setWidgetVisible = (visible: boolean) => {
+    if (!widget) {
+      return
+    }
+
+    widget.host.hidden = !visible
+
+    if (visible) {
+      refreshWidget()
+      window.requestAnimationFrame(constrainWidgetToViewport)
+    }
+  }
+
+  const handleWidgetSettingsChange = (
+    changes: StorageChanges,
+    areaName: string,
+  ) => {
+    if (areaName !== 'local') {
+      return
+    }
+
+    const nextSettings = changes.userSettings?.newValue
+
+    if (!nextSettings || typeof nextSettings !== 'object') {
+      return
+    }
+
+    const { floatingWidgetVisible } = nextSettings as Partial<UserSettings>
+
+    if (typeof floatingWidgetVisible === 'boolean') {
+      setWidgetVisible(floatingWidgetVisible)
+    }
+  }
 
   const getConstrainedWidgetPosition = (x: number, y: number): WidgetPosition => {
     if (!widget) {
@@ -1521,10 +1618,31 @@ if (
     widget.host.style.setProperty('top', `${constrainedPosition.y}px`)
     widget.host.style.setProperty('right', 'auto')
     widget.host.style.setProperty('bottom', 'auto')
+    expandedWidgetPosition = constrainedPosition
+  }
+
+  const applyMinimizedWidgetPosition = () => {
+    if (!widget) {
+      return
+    }
+
+    widget.host.style.removeProperty('left')
+    widget.host.style.removeProperty('top')
+    widget.host.style.removeProperty('right')
+    widget.host.style.removeProperty('bottom')
   }
 
   const constrainWidgetToViewport = () => {
-    if (!widget || !widget.host.style.left || !widget.host.style.top) {
+    if (!widget) {
+      return
+    }
+
+    if (widget.widget?.classList.contains('is-collapsed')) {
+      applyMinimizedWidgetPosition()
+      return
+    }
+
+    if (!widget.host.style.left || !widget.host.style.top) {
       return
     }
 
@@ -1538,13 +1656,20 @@ if (
     }
 
     const bounds = widget.host.getBoundingClientRect()
-    void setStorageValue<WidgetPosition>(widgetPositionStorageKey, {
+    const position = {
       x: bounds.left,
       y: bounds.top,
-    })
+    }
+
+    expandedWidgetPosition = position
+    void setStorageValue<WidgetPosition>(widgetPositionStorageKey, position)
   }
 
   if (widget) {
+    void getUserSettings().then((settings) => {
+      setWidgetVisible(settings.floatingWidgetVisible)
+    })
+
     void getStorageValue<WidgetPosition | null>(
       widgetPositionStorageKey,
       null,
@@ -1554,7 +1679,11 @@ if (
         Number.isFinite(position.x) &&
         Number.isFinite(position.y)
       ) {
-        applyWidgetPosition(position)
+        expandedWidgetPosition = position
+
+        if (!widget.widget?.classList.contains('is-collapsed')) {
+          applyWidgetPosition(position)
+        }
       }
     })
 
@@ -1576,6 +1705,7 @@ if (
       dragHandle.addEventListener('pointerdown', (event) => {
         if (
           event.button !== 0 ||
+          widget.widget?.classList.contains('is-collapsed') ||
           (event.target instanceof Element && event.target.closest('button'))
         ) {
           return
@@ -1615,12 +1745,84 @@ if (
   }
 
   const setWidgetCollapsed = (collapsed: boolean) => {
-    widget?.widget?.classList.toggle('is-collapsed', collapsed)
-    window.requestAnimationFrame(constrainWidgetToViewport)
+    if (!widget) {
+      return
+    }
+
+    const wasCollapsed = widget.widget?.classList.contains('is-collapsed') ?? false
+
+    if (collapsed) {
+      if (!wasCollapsed) {
+        persistWidgetPosition()
+      }
+
+      widget.widget?.classList.add('is-collapsed')
+      applyMinimizedWidgetPosition()
+      return
+    }
+
+    widget.widget?.classList.remove('is-collapsed')
+
+    if (expandedWidgetPosition) {
+      applyWidgetPosition(expandedWidgetPosition)
+    } else {
+      window.requestAnimationFrame(constrainWidgetToViewport)
+    }
+  }
+
+  const renderWidgetTime = () => {
+    if (!widget) {
+      return
+    }
+
+    const isComplete =
+      widgetGoalCompleted ||
+      (widgetGoalSeconds > 0 &&
+        widgetDisplayedActiveSeconds >= widgetGoalSeconds)
+    const remainingSeconds = Math.max(
+      0,
+      widgetGoalSeconds - widgetDisplayedActiveSeconds,
+    )
+    const percentage =
+      widgetGoalSeconds > 0
+        ? Math.floor(
+            (widgetDisplayedActiveSeconds / widgetGoalSeconds) * 100,
+          )
+        : 0
+    const goalText =
+      widgetGoalSeconds > 0 ? formatActiveTime(widgetGoalSeconds) : 'Not set'
+    const remainingText =
+      widgetGoalSeconds > 0
+        ? isComplete
+          ? 'Goal complete'
+          : `${formatActiveTime(remainingSeconds)} remaining`
+        : 'Set a goal'
+
+    widget.today!.textContent = formatActiveTime(widgetDisplayedActiveSeconds)
+    widget.goal!.textContent = goalText
+    widget.progressLabel!.textContent = remainingText
+    widget.progressPercent!.textContent = `${percentage}%`
+    widget.progressBar!.style.width = `${Math.min(100, percentage)}%`
+  }
+
+  const tickWidgetDisplay = () => {
+    const today = getLocalDateKey()
+
+    if (widgetDisplayDate !== today) {
+      widgetDisplayDate = today
+      widgetDisplayedActiveSeconds = 0
+    }
+
+    if (!widget || widget.host.hidden || !isWidgetTimerRunning) {
+      return
+    }
+
+    widgetDisplayedActiveSeconds += 1
+    renderWidgetTime()
   }
 
   const refreshWidget = () => {
-    if (!widget || isWidgetRefreshing) {
+    if (!widget || widget.host.hidden || isWidgetRefreshing) {
       return
     }
 
@@ -1643,23 +1845,39 @@ if (
           : isCurrentPageSession || isTrackingActive
             ? 'Tracking'
             : 'Ready'
-      const goalText =
-        progress.goalSeconds > 0 ? formatActiveTime(progress.goalSeconds) : 'Not set'
-      const remainingText =
-        progress.goalSeconds > 0
-          ? progress.isComplete
-            ? 'Goal complete'
-            : `${formatActiveTime(progress.remainingSeconds)} remaining`
-          : 'Set a goal'
+      const today = getLocalDateKey()
+
+      isWidgetTimerRunning =
+        !trackingPaused &&
+        statusText === 'Tracking'
+      widgetGoalSeconds = progress.goalSeconds
+      widgetGoalCompleted = progress.isComplete
+
+      if (widgetDisplayDate !== today) {
+        widgetDisplayDate = today
+        widgetDisplayedActiveSeconds = progress.activeSeconds
+      } else if (isWidgetTimerRunning) {
+        widgetDisplayedActiveSeconds = Math.max(
+          widgetDisplayedActiveSeconds,
+          progress.activeSeconds,
+        )
+      } else if (
+        progress.activeSeconds === 0 &&
+        todayActivity.sessions.length === 0 &&
+        !currentScrimbaPage?.isActive
+      ) {
+        widgetDisplayedActiveSeconds = 0
+      } else {
+        widgetDisplayedActiveSeconds = Math.max(
+          widgetDisplayedActiveSeconds,
+          progress.activeSeconds,
+        )
+      }
 
       widget.statusText!.textContent = statusText
       widget.collapsedStatus!.textContent = statusText
-      widget.today!.textContent = formatActiveTime(progress.activeSeconds)
-      widget.goal!.textContent = goalText
-      widget.progressLabel!.textContent = remainingText
-      widget.progressPercent!.textContent = `${progress.percentage}%`
-      widget.progressBar!.style.width = `${progress.visualPercentage}%`
       widget.toggleTracking!.textContent = trackingPaused ? 'Resume' : 'Pause'
+      renderWidgetTime()
 
       widget.statusDots.forEach((dot) => {
         dot.classList.toggle('is-paused', trackingPaused)
@@ -1678,6 +1896,12 @@ if (
   })
   widget?.expand?.addEventListener('click', () => setWidgetCollapsed(false), {
     signal: listenerController.signal,
+  })
+  widget?.closeButtons.forEach((closeButton) => {
+    closeButton.addEventListener('click', () => {
+      setWidgetVisible(false)
+      void saveFloatingWidgetVisible(false)
+    }, { signal: listenerController.signal })
   })
   widget?.toggleTracking?.addEventListener('click', () => {
     void getUserSettings().then((settings) => {
@@ -1703,6 +1927,7 @@ if (
     void stopActiveSession(false)
     stopMediaPlaybackMonitor()
     stopWidgetRefresh()
+    stopWidgetDisplay()
     dashboardIntegrationObserver?.disconnect()
 
     if (dashboardIntegrationFrameId !== null) {
@@ -1714,6 +1939,11 @@ if (
     }
 
     listenerController.abort()
+    try {
+      chrome.storage.onChanged.removeListener(handleWidgetSettingsChange)
+    } catch {
+      // The extension context may already be invalidated during cleanup.
+    }
     getEmbeddedDashboardHost()?.remove()
     restoreScrimbaContent()
     document.getElementById(dashboardTabId)?.remove()
@@ -1764,7 +1994,9 @@ if (
   startActiveSession()
   refreshWidget()
   startDashboardIntegration()
+  chrome.storage.onChanged.addListener(handleWidgetSettingsChange)
   widgetRefreshIntervalId = window.setInterval(refreshWidget, 5_000)
+  widgetDisplayIntervalId = window.setInterval(tickWidgetDisplay, 1_000)
 
   window.addEventListener('pagehide', cleanup, listenerOptions)
   window.addEventListener('focus', syncTrackingState, listenerOptions)

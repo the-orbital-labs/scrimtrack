@@ -1,4 +1,5 @@
 import type { HeatmapDay } from './heatmap'
+import { formatActiveTime } from './goalProgress'
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   day: 'numeric',
@@ -17,19 +18,7 @@ const formatStudiedTime = (activeSeconds: number): string => {
     return 'No activity'
   }
 
-  const totalMinutes = Math.floor(activeSeconds / 60)
-  const hours = Math.floor(totalMinutes / 60)
-  const minutes = totalMinutes % 60
-
-  if (hours === 0) {
-    return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} studied`
-  }
-
-  if (minutes === 0) {
-    return `${hours} ${hours === 1 ? 'hour' : 'hours'} studied`
-  }
-
-  return `${hours}h ${minutes}m studied`
+  return `${formatActiveTime(activeSeconds)} studied`
 }
 
 const getGoalStatus = (day: HeatmapDay): string => {

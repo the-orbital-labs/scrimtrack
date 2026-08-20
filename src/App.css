@@ -72,14 +72,23 @@
   padding: 6px 10px;
   color: var(--text-h);
   background: var(--surface);
+  font: inherit;
   font-size: 13px;
   font-weight: 700;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .settings-link:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.settings-link:disabled {
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.75;
 }
 
 .settings-link:focus-visible {

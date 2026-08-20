@@ -7,6 +7,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added controls to close the floating ScrimTrack widget and reopen it from the
+  main dashboard.
+- Added completed seconds to active-time displays in the floating widget,
+  dashboard, popup, summaries, and heatmap tooltips.
+
+### Changed
+
+- Updated visible active-time totals every second while keeping activity
+  persistence batched at five-second intervals.
+- Fixed the minimized floating widget to the bottom-right of the viewport while
+  preserving the draggable expanded position.
+
 ## [0.2.5] - 2026-08-11
 
 ### Fixed

@@ -146,6 +146,14 @@ export const saveTrackingEnabled = async (
   return settings
 }
 
+export const saveFloatingWidgetVisible = (
+  floatingWidgetVisible: boolean,
+): Promise<UserSettings> =>
+  updateStorageValue('userSettings', (settings) => ({
+    ...settings,
+    floatingWidgetVisible,
+  }))
+
 export const saveTimezone = (timezone: string): Promise<UserSettings> =>
   updateStorageValue('userSettings', (settings) => ({
     ...settings,
