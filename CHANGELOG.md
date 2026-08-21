@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Added a selectable Scrimba path and course picker with built-in Fullstack,
+  Frontend, Backend, and AI Engineer paths.
+- Added local discovery of Scrimba courses and automatic progress syncing when
+  visible course progress is available on an opened Scrimba page.
 - Added controls to close the floating ScrimTrack widget and reopen it from the
   main dashboard.
 - Added completed seconds to active-time displays in the floating widget,

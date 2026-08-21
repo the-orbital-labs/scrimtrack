@@ -1,3 +1,5 @@
+import { detectScrimbaCourseProgress } from './scrimbaCourseDetection'
+
 const scrimbaHosts = new Set(['scrimba.com', 'v2.scrimba.com'])
 
 type CurrentScrimbaPage = {
@@ -271,6 +273,7 @@ const mediaPlaybackHeartbeatIntervalMs = 15_000
 const mediaPlaybackProgressThresholdSeconds = 0.05
 const pagePlaybackStateMaxAgeMs = 3_000
 const codeActivityMessageIntervalMs = 2_000
+const courseProgressCheckIntervalMs = 15_000
 const codeEditorSelector = [
   '.cm-editor',
   '.cm-content',
@@ -314,12 +317,14 @@ if (
   let mediaPlaybackCheckIntervalId: number | null = null
   let widgetRefreshIntervalId: number | null = null
   let widgetDisplayIntervalId: number | null = null
+  let courseProgressCheckIntervalId: number | null = null
   let isTrackingActive = false
   let isTrackingIdle = false
   let isMediaPlaybackActive = false
   let isPagePlaybackActive = false
   let lastPagePlaybackStateAt = 0
   let lastMediaPlaybackHeartbeatAt = 0
+  let lastCourseProgressSignature: string | null = null
   let isWidgetRefreshing = false
   let isWidgetTimerRunning = false
   let dashboardIntegrationObserver: MutationObserver | null = null
@@ -360,6 +365,34 @@ if (
     } catch {
       return false
     }
+  }
+
+  const detectAndSyncCourseProgress = () => {
+    const course = detectScrimbaCourseProgress(document, window.location.href)
+
+    if (!course) {
+      return
+    }
+
+    const signature = JSON.stringify({
+      completedItems: course.completedItems,
+      id: course.id,
+      name: course.name,
+      progressPercentage: course.progressPercentage,
+      totalEstimatedHours: course.totalEstimatedHours,
+      totalItems: course.totalItems,
+      url: course.url,
+    })
+
+    if (signature === lastCourseProgressSignature) {
+      return
+    }
+
+    lastCourseProgressSignature = signature
+    sendRuntimeMessage({
+      type: 'scrimba:course-progress-detected',
+      course,
+    })
   }
 
   const isPageActive = () =>
@@ -1957,6 +1990,10 @@ if (
     stopMediaPlaybackMonitor()
     stopWidgetRefresh()
     stopWidgetDisplay()
+    if (courseProgressCheckIntervalId !== null) {
+      window.clearInterval(courseProgressCheckIntervalId)
+      courseProgressCheckIntervalId = null
+    }
     dashboardIntegrationObserver?.disconnect()
 
     if (dashboardIntegrationFrameId !== null) {
@@ -2026,11 +2063,16 @@ if (
   }
 
   startMediaPlaybackMonitor()
+  detectAndSyncCourseProgress()
   refreshWidget()
   startDashboardIntegration()
   chrome.storage.onChanged.addListener(handleWidgetSettingsChange)
   widgetRefreshIntervalId = window.setInterval(refreshWidget, 5_000)
   widgetDisplayIntervalId = window.setInterval(tickWidgetDisplay, 1_000)
+  courseProgressCheckIntervalId = window.setInterval(
+    detectAndSyncCourseProgress,
+    courseProgressCheckIntervalMs,
+  )
 
   window.addEventListener('pagehide', cleanup, listenerOptions)
   window.addEventListener('focus', syncTrackingState, listenerOptions)

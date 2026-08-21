@@ -23,7 +23,8 @@ ScrimTrack helps you understand your Scrimba learning habits without accounts, s
 * Shows today, this week, this month, current streak, longest streak, and all-time totals
 * Displays learning activity in a contribution-style heatmap
 * Lets you set a daily learning goal
-* Lets you set up a learning path manually and estimate a finish date
+* Lets you select a Scrimba path or discovered course, sync visible progress,
+  and estimate a finish date
 * Exports local data as JSON and supports local reset controls
 
 ## Screenshots
@@ -54,7 +55,8 @@ ScrimTrack is privacy-friendly by default.
 
 ScrimTrack requests limited permissions:
 
-* `storage` is used to save activity, sessions, streaks, settings, and path projection data locally.
+* `storage` is used to save activity, sessions, streaks, settings, selected
+  courses, detected progress, and path projection data locally.
 * Scrimba host access is limited to:
 
   * `https://scrimba.com/*`

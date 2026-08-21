@@ -1420,6 +1420,32 @@
   padding-inline: 10px;
 }
 
+.path-sync-help {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.path-course-link {
+  width: fit-content;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.path-course-link:hover {
+  text-decoration: underline;
+}
+
+.path-course-link:focus-visible {
+  border-radius: 3px;
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .path-setup-grid input[type='number'],
 .path-setup-grid input[type='text'],
 .path-setup-grid select {

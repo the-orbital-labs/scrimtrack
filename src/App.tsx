@@ -17,15 +17,16 @@ import {
 } from './idleTimeout'
 import {
   getPathProgress,
+  getSelectableScrimbaCourses,
+  getSelectedScrimbaCourse,
   isValidAverageWindowDays,
-  isValidPathName,
   isValidProgressPercentage,
   isValidTotalEstimatedHours,
   parseAverageWindowDays,
   saveAverageWindowDays,
-  savePathName,
   saveProgressPercentage,
   saveTotalEstimatedHours,
+  selectScrimbaCourse,
 } from './pathProgress'
 import {
   formatHoursPerDay,
@@ -34,6 +35,7 @@ import {
   getPathProjection,
 } from './projection'
 import type { PathProjection } from './projection'
+import { builtInScrimbaCourses } from './scrimbaCourse'
 import {
   getUserSettings,
   saveDailyGoal,
@@ -182,7 +184,6 @@ function App() {
   const [idleTimeoutStatusText, setIdleTimeoutStatusText] = useState<string | null>(null)
   const [trackingStatusMessage, setTrackingStatusMessage] = useState<string | null>(null)
   const [heatmapPeriod, setHeatmapPeriod] = useState<HeatmapPeriod>('year')
-  const [pathName, setPathName] = useState('')
   const [totalEstimatedHours, setTotalEstimatedHours] = useState('1')
   const [progressPercentage, setProgressPercentage] = useState('0')
   const [pathError, setPathError] = useState<string | null>(null)
@@ -257,6 +258,17 @@ function App() {
         )
       }
 
+      const pathProgressChange = changes.pathProgress
+
+      if (pathProgressChange && 'newValue' in pathProgressChange) {
+        void getPathProgress().then((nextPathProgress) => {
+          setPathProgress(nextPathProgress)
+          setTotalEstimatedHours(String(nextPathProgress.totalEstimatedHours))
+          setProgressPercentage(String(nextPathProgress.progressPercentage))
+          void getPathProjection().then(syncProjection)
+        })
+      }
+
       const nextSettings = changes.userSettings?.newValue
 
       if (!nextSettings || typeof nextSettings !== 'object') {
@@ -329,7 +341,6 @@ function App() {
         setPathProgress(loadedPathProgress)
         setCurrentScrimbaPage(loadedCurrentScrimbaPage)
         syncProjection(projection)
-        setPathName(loadedPathProgress.pathName)
         setTotalEstimatedHours(String(loadedPathProgress.totalEstimatedHours))
         setProgressPercentage(String(loadedPathProgress.progressPercentage))
         setDailyGoalMinutes(
@@ -438,25 +449,25 @@ function App() {
 
   const syncPathProgress = (nextPathProgress: PathProgress) => {
     setPathProgress(nextPathProgress)
-    setPathName(nextPathProgress.pathName)
     setTotalEstimatedHours(String(nextPathProgress.totalEstimatedHours))
     setProgressPercentage(String(nextPathProgress.progressPercentage))
     setPathError(null)
     refreshProjection()
   }
 
-  const savePathNameValue = () => {
-    if (!isValidPathName(pathName)) {
-      setPathError('Enter a path name.')
-      setPathSaveStatusText(null)
-      setPathName(pathProgress?.pathName ?? '')
+  const selectCourse = (courseId: string) => {
+    if (!courseId) {
       return
     }
 
-    setPathSaveStatusText('Saving path name...')
-    void savePathName(pathName).then((nextPathProgress) => {
+    setPathSaveStatusText('Selecting Scrimba course...')
+    void selectScrimbaCourse(courseId).then((nextPathProgress) => {
       syncPathProgress(nextPathProgress)
-      setPathSaveStatusText('Saved path name.')
+      setPathSaveStatusText(
+        nextPathProgress.progressSource === 'scrimba'
+          ? 'Selected course and synced its Scrimba progress.'
+          : 'Selected course. Open it on Scrimba to sync visible progress.',
+      )
     })
   }
 
@@ -522,7 +533,6 @@ function App() {
       setSettings(nextStorage.userSettings)
       setStreakStatus(nextStorage.streakStatus)
       setPathProgress(nextStorage.pathProgress)
-      setPathName(nextStorage.pathProgress.pathName)
       setTotalEstimatedHours(String(nextStorage.pathProgress.totalEstimatedHours))
       setProgressPercentage(String(nextStorage.pathProgress.progressPercentage))
       setDailyGoalMinutes(String(secondsToMinutes(nextStorage.userSettings.dailyGoalSeconds)))
@@ -612,6 +622,20 @@ function App() {
       ? 'All-time average'
       : `${pathProgress?.averageWindowDays ?? 7}-day average`
   const pathCompletionPercentage = pathProgress?.progressPercentage ?? 0
+  const selectableCourses = getSelectableScrimbaCourses(pathProgress)
+  const builtInCourseIds = new Set(builtInScrimbaCourses.map((course) => course.id))
+  const builtInCourseOptions = selectableCourses.filter((course) =>
+    builtInCourseIds.has(course.id),
+  )
+  const discoveredCourseOptions = selectableCourses.filter(
+    (course) => !builtInCourseIds.has(course.id),
+  )
+  const selectedCourse = getSelectedScrimbaCourse(pathProgress)
+  const courseSyncHelpText = !selectedCourse
+    ? 'Choose a path below. Other Scrimba courses appear after you open their course or lesson page.'
+    : pathProgress?.progressSource === 'scrimba'
+      ? 'Progress was detected automatically from Scrimba. It will refresh while the course is open.'
+      : 'Open this course on Scrimba to detect visible progress automatically. Manual progress remains available as a fallback.'
   const averagePaceText = formatHoursPerDay(averagePaceSeconds)
   const completedHoursText = formatPathHours(completedHours)
   const remainingHoursText =
@@ -1024,23 +1048,41 @@ function App() {
 
         <div className="path-setup-grid">
           <div className="path-setting-field">
-            <label htmlFor="dashboard-path-name">Path name</label>
-            <div className="path-setting-row">
-              <input
-                id="dashboard-path-name"
-                type="text"
-                value={pathName}
-                onChange={(event) => setPathName(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    savePathNameValue()
-                  }
-                }}
-              />
-              <button type="button" className="secondary-button" onClick={savePathNameValue}>
-                Save
-              </button>
-            </div>
+            <label htmlFor="dashboard-course-selection">Scrimba path or course</label>
+            <select
+              id="dashboard-course-selection"
+              value={pathProgress?.selectedCourseId ?? ''}
+              onChange={(event) => selectCourse(event.target.value)}
+            >
+              <option value="">Choose a path or discovered course</option>
+              <optgroup label="Scrimba paths">
+                {builtInCourseOptions.map((course) => (
+                  <option key={course.id} value={course.id}>
+                    {course.name}
+                  </option>
+                ))}
+              </optgroup>
+              {discoveredCourseOptions.length > 0 ? (
+                <optgroup label="Courses found on Scrimba">
+                  {discoveredCourseOptions.map((course) => (
+                    <option key={course.id} value={course.id}>
+                      {course.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+            </select>
+            <span className="path-sync-help">{courseSyncHelpText}</span>
+            {selectedCourse ? (
+              <a
+                className="path-course-link"
+                href={selectedCourse.url}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Open {selectedCourse.name} on Scrimba
+              </a>
+            ) : null}
           </div>
 
           <div className="path-setting-field">
@@ -1067,7 +1109,9 @@ function App() {
           </div>
 
           <div className="path-setting-field">
-            <label htmlFor="dashboard-path-progress">Progress</label>
+            <label htmlFor="dashboard-path-progress">
+              Progress {pathProgress?.progressSource === 'scrimba' ? '(Scrimba)' : '(manual fallback)'}
+            </label>
             <div className="input-row dashboard-input-row path-setting-row">
               <input
                 id="dashboard-path-progress"
