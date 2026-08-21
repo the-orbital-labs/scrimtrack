@@ -96,7 +96,8 @@
   outline-offset: 2px;
 }
 
-#dashboard-settings {
+#dashboard-settings,
+#idle-timeout-settings {
   scroll-margin-top: 16px;
 }
 
