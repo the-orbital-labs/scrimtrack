@@ -5,7 +5,12 @@ import {
   setLearningSessionActiveState,
   startLearningSession,
 } from './activity'
-import { ensurePathProgress } from './pathProgress'
+import {
+  ensurePathProgress,
+  recordDetectedScrimbaCourse,
+} from './pathProgress'
+import { isScrimbaCourseProgress } from './scrimbaCourse'
+import type { ScrimbaCourseProgress } from './scrimbaCourse'
 import { isScrimbaUrl } from './scrimbaUrl'
 import { ensureUserSettings, getUserSettings } from './settings'
 import { getStorageValue, setStorageValue, updateStorageValue } from './storage'
@@ -63,6 +68,11 @@ type UserActivityMessage = {
   title: string | null
   eventType: UserActivityEventType
   activityAt: string
+}
+
+type CourseProgressDetectedMessage = {
+  type: 'scrimba:course-progress-detected'
+  course: ScrimbaCourseProgress
 }
 
 const userActivityEventTypes = new Set<UserActivityEventType>([
@@ -231,6 +241,21 @@ const isUserActivityMessage = (message: unknown): message is UserActivityMessage
   )
 }
 
+const isCourseProgressDetectedMessage = (
+  message: unknown,
+): message is CourseProgressDetectedMessage => {
+  if (typeof message !== 'object' || message === null || !('type' in message)) {
+    return false
+  }
+
+  const candidate = message as Record<string, unknown>
+
+  return (
+    candidate.type === 'scrimba:course-progress-detected' &&
+    isScrimbaCourseProgress(candidate.course)
+  )
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   void Promise.all([
     updateStorageValue('extensionStatus', (extensionStatus) => ({
@@ -259,6 +284,19 @@ chrome.runtime.onStartup.addListener(() => {
 })
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (isCourseProgressDetectedMessage(message)) {
+    void recordDetectedScrimbaCourse(message.course).then((pathProgress) => {
+      sendResponse({
+        ok: true,
+        isSelectedCourse:
+          pathProgress.selectedCourseId === message.course.id,
+        progressPercentage: pathProgress.progressPercentage,
+      })
+    })
+
+    return true
+  }
+
   if (isTrackingStartedMessage(message)) {
     void getUserSettings().then((settings) => {
       if (!settings.trackingEnabled) {

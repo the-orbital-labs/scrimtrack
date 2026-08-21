@@ -1,3 +1,5 @@
+import type { ScrimbaCourseProgress } from './scrimbaCourse'
+
 export type ExtensionStatus = {
   installedAt: string | null
   lastStartedAt: string | null
@@ -52,9 +54,14 @@ export type UserSettings = {
 export type AverageWindowDays = 7 | 14 | 30 | 'all'
 
 export type PathProgress = {
+  courseUrl: string | null
+  detectedCourses: Record<string, ScrimbaCourseProgress>
+  lastProgressSyncAt: string | null
   pathName: string
+  progressSource: 'manual' | 'scrimba'
   totalEstimatedHours: number
   progressPercentage: number
+  selectedCourseId: string | null
   averageWindowDays: AverageWindowDays
 }
 
@@ -77,7 +84,7 @@ export type LocalDataExport = {
   app: 'scrimtrack'
   data: StorageSchema
   exportedAt: string
-  schemaVersion: 1
+  schemaVersion: 2
 }
 
 const defaultStorageValues: StorageSchema = {
@@ -101,9 +108,14 @@ const defaultStorageValues: StorageSchema = {
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   },
   pathProgress: {
+    courseUrl: null,
+    detectedCourses: {},
+    lastProgressSyncAt: null,
     pathName: '',
+    progressSource: 'manual',
     totalEstimatedHours: 1,
     progressPercentage: 0,
+    selectedCourseId: null,
     averageWindowDays: 7,
   },
 }
@@ -296,6 +308,6 @@ export const getLocalDataExport = async (): Promise<LocalDataExport> => {
       pathProgress,
     },
     exportedAt: new Date().toISOString(),
-    schemaVersion: 1,
+    schemaVersion: 2,
   }
 }
