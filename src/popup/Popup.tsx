@@ -545,7 +545,6 @@ function Popup() {
                     'mini-heatmap-cell',
                     'heatmap-tooltip-trigger',
                     `heatmap-level-${day.intensity}`,
-                    day.isToday ? 'is-today' : '',
                     day.isFuture ? 'is-future' : '',
                   ].filter(Boolean).join(' ')}
                   aria-label={getHeatmapTooltipText(day)}

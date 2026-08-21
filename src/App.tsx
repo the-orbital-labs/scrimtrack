@@ -826,7 +826,6 @@ function App() {
                           'dashboard-heatmap-cell',
                           'heatmap-tooltip-trigger',
                           `heatmap-level-${day.intensity}`,
-                          day.isToday ? 'is-today' : '',
                           day.isFuture || day.isOutsideRange ? 'is-muted' : '',
                           isSelectedPeriodDay ? 'is-selected-period' : '',
                           !isSelectedPeriodDay && heatmapPeriod !== 'year'
