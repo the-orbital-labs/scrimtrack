@@ -54,13 +54,7 @@ type TrackingStoppedMessage = {
   stoppedAt: string
 }
 
-type UserActivityEventType =
-  | 'mousemove'
-  | 'click'
-  | 'keydown'
-  | 'scroll'
-  | 'touch'
-  | 'media-playback'
+type UserActivityEventType = 'code-interaction' | 'media-playback'
 
 type UserActivityMessage = {
   type: 'scrimba:user-activity'
@@ -72,11 +66,7 @@ type UserActivityMessage = {
 }
 
 const userActivityEventTypes = new Set<UserActivityEventType>([
-  'mousemove',
-  'click',
-  'keydown',
-  'scroll',
-  'touch',
+  'code-interaction',
   'media-playback',
 ])
 

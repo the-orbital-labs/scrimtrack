@@ -234,13 +234,7 @@ const getPageTitle = (): string | null => {
   return title || null
 }
 
-type UserActivityEventType =
-  | 'mousemove'
-  | 'click'
-  | 'keydown'
-  | 'scroll'
-  | 'touch'
-  | 'media-playback'
+type UserActivityEventType = 'code-interaction' | 'media-playback'
 
 type RuntimeResponse = {
   isIdle?: boolean
@@ -276,6 +270,28 @@ const mediaPlaybackCheckIntervalMs = 1_000
 const mediaPlaybackHeartbeatIntervalMs = 15_000
 const mediaPlaybackProgressThresholdSeconds = 0.05
 const pagePlaybackStateMaxAgeMs = 3_000
+const codeActivityMessageIntervalMs = 2_000
+const codeEditorSelector = [
+  '.cm-editor',
+  '.cm-content',
+  '.CodeMirror',
+  '.CodeMirror-code',
+  '.monaco-editor',
+  '.ace_editor',
+  '.ace_text-input',
+  '[data-testid*="code-editor" i]',
+  '[data-test*="code-editor" i]',
+  '[data-cy*="code-editor" i]',
+  '[data-component*="code-editor" i]',
+  '[id*="code-editor" i]',
+  '[id*="codeeditor" i]',
+  '[class*="code-editor" i]',
+  '[class*="codeeditor" i]',
+  '[aria-label*="code editor" i]',
+  '[aria-label*="code input" i]',
+  '[role="textbox"][aria-multiline="true"][spellcheck="false"]',
+  'textarea[spellcheck="false"][autocapitalize="off"]',
+].join(', ')
 
 if (
   isScrimbaUrl(window.location.href) &&
@@ -348,6 +364,12 @@ if (
 
   const isPageActive = () =>
     document.visibilityState === 'visible' && document.hasFocus()
+
+  const isCodeEditorActivity = (event: Event): boolean =>
+    event.composedPath().some(
+      (eventTarget) =>
+        eventTarget instanceof Element && eventTarget.matches(codeEditorSelector),
+    )
 
   const getUnsentActiveSeconds = (recordedAt: number): number => {
     if (lastAccountedAt === 0) {
@@ -567,6 +589,7 @@ if (
     const now = Date.now()
 
     if (!currentSessionId) {
+      lastActivityMessageAt = now
       startActiveSession()
       return
     }
@@ -575,8 +598,8 @@ if (
     isTrackingIdle = false
 
     if (
-      (eventType === 'mousemove' || eventType === 'scroll') &&
-      now - lastActivityMessageAt < 2_000
+      eventType === 'code-interaction' &&
+      now - lastActivityMessageAt < codeActivityMessageIntervalMs
     ) {
       return
     }
@@ -688,6 +711,7 @@ if (
 
   const checkMediaPlayback = () => {
     const now = Date.now()
+    const wasPlaying = isMediaPlaybackActive
     const hasActivePagePlayback =
       isPagePlaybackActive &&
       now - lastPagePlaybackStateAt <= pagePlaybackStateMaxAgeMs
@@ -701,7 +725,8 @@ if (
 
     if (
       !isPlaying ||
-      now - lastMediaPlaybackHeartbeatAt < mediaPlaybackHeartbeatIntervalMs
+      (wasPlaying &&
+        now - lastMediaPlaybackHeartbeatAt < mediaPlaybackHeartbeatIntervalMs)
     ) {
       return
     }
@@ -1838,9 +1863,12 @@ if (
       const isCurrentPageSession =
         currentScrimbaPage?.url === window.location.href &&
         currentScrimbaPage.isActive
+      const isCurrentPageIdle =
+        currentScrimbaPage?.url === window.location.href &&
+        currentScrimbaPage.isIdle
       const statusText = trackingPaused
         ? 'Paused'
-        : isTrackingIdle || currentScrimbaPage?.isIdle
+        : isTrackingIdle || isCurrentPageIdle
           ? 'Idle'
           : isCurrentPageSession || isTrackingActive
             ? 'Tracking'
@@ -1915,7 +1943,8 @@ if (
       }
 
       void saveTrackingEnabled(true).then(() => {
-        startActiveSession()
+        lastMediaPlaybackHeartbeatAt = 0
+        checkMediaPlayback()
         refreshWidget()
       })
     })
@@ -1952,11 +1981,17 @@ if (
 
   const syncTrackingState = () => {
     if (isPageActive()) {
-      startActiveSession()
+      checkMediaPlayback()
       return
     }
 
     void stopActiveSession()
+  }
+
+  const handleCodeEditorActivity = (event: Event) => {
+    if (isCodeEditorActivity(event)) {
+      sendUserActivity('code-interaction')
+    }
   }
 
   const listenerOptions = { signal: listenerController.signal }
@@ -1991,7 +2026,6 @@ if (
   }
 
   startMediaPlaybackMonitor()
-  startActiveSession()
   refreshWidget()
   startDashboardIntegration()
   chrome.storage.onChanged.addListener(handleWidgetSettingsChange)
@@ -2011,25 +2045,9 @@ if (
   )
   document.addEventListener('visibilitychange', syncTrackingState, listenerOptions)
   window.addEventListener('message', handlePagePlaybackState, listenerOptions)
-  document.addEventListener(
-    'mousemove',
-    () => sendUserActivity('mousemove'),
-    passiveListenerOptions,
-  )
-  document.addEventListener('click', () => sendUserActivity('click'), listenerOptions)
-  document.addEventListener(
-    'keydown',
-    () => sendUserActivity('keydown'),
-    listenerOptions,
-  )
-  document.addEventListener(
-    'scroll',
-    () => sendUserActivity('scroll'),
-    passiveListenerOptions,
-  )
-  document.addEventListener(
-    'touchstart',
-    () => sendUserActivity('touch'),
-    passiveListenerOptions,
-  )
+  document.addEventListener('pointerdown', handleCodeEditorActivity, listenerOptions)
+  document.addEventListener('keydown', handleCodeEditorActivity, listenerOptions)
+  document.addEventListener('beforeinput', handleCodeEditorActivity, listenerOptions)
+  document.addEventListener('paste', handleCodeEditorActivity, listenerOptions)
+  document.addEventListener('wheel', handleCodeEditorActivity, passiveListenerOptions)
 }
