@@ -894,6 +894,39 @@ function App() {
         </div>
       </section>
 
+      <section className="summary-grid" aria-label="Key learning stats">
+        <SummaryStatCard
+          detail={todaySummaryDetail}
+          isEmpty={todayActiveSeconds === 0}
+          label="Today"
+          value={formatActiveTime(todayActiveSeconds)}
+        />
+        <SummaryStatCard
+          detail={weeklySummaryDetail}
+          isEmpty={weeklyActiveSeconds === 0}
+          label="This week"
+          value={formatActiveTime(weeklyActiveSeconds)}
+        />
+        <SummaryStatCard
+          detail={monthlySummaryDetail}
+          isEmpty={monthlyActiveSeconds === 0}
+          label="This month"
+          value={formatActiveTime(monthlyActiveSeconds)}
+        />
+        <SummaryStatCard
+          detail={streakSummaryDetail}
+          isEmpty={currentStreak === 0}
+          label="Current streak"
+          value={currentStreakLabel}
+        />
+        <SummaryStatCard
+          detail={allTimeSummaryDetail}
+          isEmpty={allTimeActiveSeconds === 0}
+          label="All-time"
+          value={formatActiveTime(allTimeActiveSeconds)}
+        />
+      </section>
+
       <section className="panel idle-timeout-panel" id="idle-timeout-settings">
         <div className="goal-settings-header">
           <div>
@@ -1206,39 +1239,6 @@ function App() {
             {pathSaveStatusText}
           </span>
         ) : null}
-      </section>
-
-      <section className="summary-grid" aria-label="Key learning stats">
-        <SummaryStatCard
-          detail={todaySummaryDetail}
-          isEmpty={todayActiveSeconds === 0}
-          label="Today"
-          value={formatActiveTime(todayActiveSeconds)}
-        />
-        <SummaryStatCard
-          detail={weeklySummaryDetail}
-          isEmpty={weeklyActiveSeconds === 0}
-          label="This week"
-          value={formatActiveTime(weeklyActiveSeconds)}
-        />
-        <SummaryStatCard
-          detail={monthlySummaryDetail}
-          isEmpty={monthlyActiveSeconds === 0}
-          label="This month"
-          value={formatActiveTime(monthlyActiveSeconds)}
-        />
-        <SummaryStatCard
-          detail={streakSummaryDetail}
-          isEmpty={currentStreak === 0}
-          label="Current streak"
-          value={currentStreakLabel}
-        />
-        <SummaryStatCard
-          detail={allTimeSummaryDetail}
-          isEmpty={allTimeActiveSeconds === 0}
-          label="All-time"
-          value={formatActiveTime(allTimeActiveSeconds)}
-        />
       </section>
 
       <section
