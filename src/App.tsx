@@ -11,6 +11,11 @@ import { getDashboardHeatmapGrid } from './heatmap'
 import type { HeatmapGrid, HeatmapWeek } from './heatmap'
 import { getHeatmapTooltipLines, getHeatmapTooltipText } from './heatmapTooltip'
 import {
+  getIdleTimeoutPresetLabel,
+  idleTimeoutPresets,
+  isIdleTimeoutPreset,
+} from './idleTimeout'
+import {
   getPathProgress,
   isValidAverageWindowDays,
   isValidPathName,
@@ -59,7 +64,6 @@ import type { WeeklySummary } from './weeklySummary'
 import { useLiveActivitySeconds } from './useLiveActivitySeconds'
 
 const dailyGoalPresetMinutes = [15, 30, 45, 60] as const
-const idleTimeoutPresetMinutes = [1, 2, 5, 10] as const
 const heatmapPeriodOptions = ['year', 'month', 'week'] as const
 const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const monthFormatter = new Intl.DateTimeFormat(undefined, { month: 'short' })
@@ -86,14 +90,8 @@ const heatmapPeriodLabels: Record<HeatmapPeriod, string> = {
 const pluralizeActiveDays = (count: number): string =>
   `${count} active ${count === 1 ? 'day' : 'days'}`
 
-const formatTimeoutMinutes = (minutes: number): string =>
-  `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`
-
 const isValidDailyGoalMinutes = (value: number): boolean =>
   Number.isInteger(value) && value > 0 && value <= 24 * 60
-
-const isValidIdleTimeoutMinutes = (value: number): boolean =>
-  Number.isInteger(value) && value > 0 && value <= 60
 
 const parseLocalDateKey = (dateKey: string): Date => {
   const [year, month, day] = dateKey.split('-').map(Number)
@@ -180,7 +178,7 @@ function App() {
   const [dailyGoalMinutes, setDailyGoalMinutes] = useState('30')
   const [dailyGoalError, setDailyGoalError] = useState<string | null>(null)
   const [dailyGoalStatusText, setDailyGoalStatusText] = useState<string | null>(null)
-  const [idleTimeoutMinutes, setIdleTimeoutMinutes] = useState('2')
+  const [idleTimeoutSeconds, setIdleTimeoutSeconds] = useState(2 * 60)
   const [idleTimeoutStatusText, setIdleTimeoutStatusText] = useState<string | null>(null)
   const [trackingStatusMessage, setTrackingStatusMessage] = useState<string | null>(null)
   const [heatmapPeriod, setHeatmapPeriod] = useState<HeatmapPeriod>('year')
@@ -265,11 +263,17 @@ function App() {
         return
       }
 
+      const nextUserSettings = nextSettings as Partial<UserSettings>
+
       setSettings((currentSettings) =>
         currentSettings
-          ? { ...currentSettings, ...(nextSettings as Partial<UserSettings>) }
+          ? { ...currentSettings, ...nextUserSettings }
           : currentSettings,
       )
+
+      if (typeof nextUserSettings.idleTimeoutSeconds === 'number') {
+        setIdleTimeoutSeconds(nextUserSettings.idleTimeoutSeconds)
+      }
     }
 
     try {
@@ -331,9 +335,7 @@ function App() {
         setDailyGoalMinutes(
           String(secondsToMinutes(loadedSettings.dailyGoalSeconds)),
         )
-        setIdleTimeoutMinutes(
-          String(secondsToMinutes(loadedSettings.idleTimeoutSeconds)),
-        )
+        setIdleTimeoutSeconds(loadedSettings.idleTimeoutSeconds)
       },
     )
 
@@ -380,22 +382,20 @@ function App() {
     saveGoalMinutes(Number(dailyGoalMinutes))
   }
 
-  const saveIdleTimeoutMinutes = (minutes: number) => {
-    if (!isValidIdleTimeoutMinutes(minutes)) {
-      setIdleTimeoutStatusText('Choose a timeout between 1 and 60 minutes.')
-      setIdleTimeoutMinutes(
-        settings ? String(secondsToMinutes(settings.idleTimeoutSeconds)) : '2',
-      )
+  const saveIdleTimeoutSeconds = (seconds: number) => {
+    if (!isIdleTimeoutPreset(seconds)) {
+      setIdleTimeoutStatusText('Choose one of the available timeout options.')
+      setIdleTimeoutSeconds(settings?.idleTimeoutSeconds ?? 2 * 60)
       return
     }
 
     setIdleTimeoutStatusText('Saving idle timeout...')
-    setIdleTimeoutMinutes(String(minutes))
-    void saveIdleTimeout(minutes * 60).then((nextSettings) => {
+    setIdleTimeoutSeconds(seconds)
+    void saveIdleTimeout(seconds).then((nextSettings) => {
       setSettings(nextSettings)
-      setIdleTimeoutMinutes(String(secondsToMinutes(nextSettings.idleTimeoutSeconds)))
+      setIdleTimeoutSeconds(nextSettings.idleTimeoutSeconds)
       setIdleTimeoutStatusText(
-        `Saved ${formatTimeoutMinutes(minutes)} idle timeout.`,
+        `Saved ${getIdleTimeoutPresetLabel(seconds) ?? formatActiveTime(seconds)} idle timeout.`,
       )
     })
   }
@@ -414,7 +414,7 @@ function App() {
       setSettings(nextSettings)
       setTrackingStatusMessage(
         nextSettings.trackingEnabled
-          ? 'Tracking is on. Scrimba activity will be counted.'
+          ? 'Tracking is on. Lesson playback and coding will be counted.'
           : 'Tracking is paused. No Scrimba activity will be counted.',
       )
       refreshTodayActivity()
@@ -526,9 +526,7 @@ function App() {
       setTotalEstimatedHours(String(nextStorage.pathProgress.totalEstimatedHours))
       setProgressPercentage(String(nextStorage.pathProgress.progressPercentage))
       setDailyGoalMinutes(String(secondsToMinutes(nextStorage.userSettings.dailyGoalSeconds)))
-      setIdleTimeoutMinutes(
-        String(secondsToMinutes(nextStorage.userSettings.idleTimeoutSeconds)),
-      )
+      setIdleTimeoutSeconds(nextStorage.userSettings.idleTimeoutSeconds)
       setDailyGoalError(null)
       setDailyGoalStatusText(null)
       setIdleTimeoutStatusText(null)
@@ -685,6 +683,14 @@ function App() {
       }))
       .filter((marker) => marker.label) ?? []
   const trackingStatusText =
+    settings?.trackingEnabled === false
+      ? 'Tracking paused'
+      : isLiveActivityRunning
+        ? 'Tracking'
+        : currentScrimbaPage?.isIdle
+          ? 'Idle'
+          : 'Ready'
+  const trackingSettingText =
     settings?.trackingEnabled === false ? 'Tracking paused' : 'Tracking on'
   const trackingStatusClass =
     settings?.trackingEnabled === false ? 'is-paused' : 'is-active'
@@ -1217,11 +1223,11 @@ function App() {
 
         <label className="tracking-toggle-card">
           <span>
-            <strong>{trackingStatusText}</strong>
+            <strong>{trackingSettingText}</strong>
             <small>
               {settings?.trackingEnabled === false
                 ? 'No Scrimba activity is being tracked.'
-                : 'Scrimba activity is being tracked when pages are active.'}
+                : 'Lesson playback and code-editor activity are tracked while the page is active.'}
             </small>
           </span>
           <input
@@ -1237,21 +1243,21 @@ function App() {
         ) : null}
 
         <p className="settings-help-text">
-          Idle timeout is how long Scrimba can sit without interaction before tracking pauses. Playing lesson media keeps tracking active while the Scrimba tab is visible and focused.
+          Idle timeout is how long coding can pause without editor interaction before tracking stops. Playing lesson media keeps tracking active while the Scrimba tab is visible and focused.
         </p>
 
         <div className="goal-control" role="group" aria-label="Idle timeout presets">
           <div className="segmented-control idle-timeout-presets">
-            {idleTimeoutPresetMinutes.map((minutes) => (
+            {idleTimeoutPresets.map((preset) => (
               <button
-                key={minutes}
+                key={preset.seconds}
                 type="button"
                 className={
-                  Number(idleTimeoutMinutes) === minutes ? 'is-selected' : undefined
+                  idleTimeoutSeconds === preset.seconds ? 'is-selected' : undefined
                 }
-                onClick={() => saveIdleTimeoutMinutes(minutes)}
+                onClick={() => saveIdleTimeoutSeconds(preset.seconds)}
               >
-                {minutes}m
+                {preset.label}
               </button>
             ))}
           </div>

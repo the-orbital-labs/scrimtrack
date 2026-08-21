@@ -7,6 +7,11 @@ import { getPopupHeatmapGrid } from '../heatmap'
 import type { HeatmapGrid } from '../heatmap'
 import { getHeatmapTooltipLines, getHeatmapTooltipText } from '../heatmapTooltip'
 import {
+  getIdleTimeoutPresetLabel,
+  idleTimeoutPresets,
+  isIdleTimeoutPreset,
+} from '../idleTimeout'
+import {
   getPathProgress,
   isValidAverageWindowDays,
   isValidPathName,
@@ -47,7 +52,6 @@ import type { WeeklyTimeStats } from '../timeStats'
 import { useLiveActivitySeconds } from '../useLiveActivitySeconds'
 
 const dailyGoalPresetMinutes = [15, 30, 45, 60] as const
-const idleTimeoutPresetMinutes = [1, 2, 5, 10] as const
 const dashboardPath = 'dashboard.html'
 
 const openDashboard = () => {
@@ -72,12 +76,6 @@ const openDashboard = () => {
 const isValidDailyGoalMinutes = (value: number): boolean =>
   Number.isInteger(value) && value > 0 && value <= 24 * 60
 
-const isValidIdleTimeoutMinutes = (value: number): boolean =>
-  Number.isInteger(value) && value > 0 && value <= 60
-
-const formatTimeoutMinutes = (minutes: number): string =>
-  `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`
-
 function Popup() {
   const [settings, setSettings] = useState<UserSettings | null>(null)
   const [todayActivity, setTodayActivity] = useState<DailyActivity | null>(null)
@@ -92,7 +90,7 @@ function Popup() {
   const [completedHours, setCompletedHours] = useState(0)
   const [remainingHours, setRemainingHours] = useState(0)
   const [dailyGoalMinutes, setDailyGoalMinutes] = useState('30')
-  const [idleTimeoutMinutes, setIdleTimeoutMinutes] = useState('2')
+  const [idleTimeoutSeconds, setIdleTimeoutSeconds] = useState(2 * 60)
   const [timezone, setTimezone] = useState(
     Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   )
@@ -162,11 +160,17 @@ function Popup() {
       const nextSettings = changes.userSettings?.newValue
 
       if (nextSettings && typeof nextSettings === 'object') {
+        const nextUserSettings = nextSettings as Partial<UserSettings>
+
         setSettings((currentSettings) =>
           currentSettings
-            ? { ...currentSettings, ...(nextSettings as Partial<UserSettings>) }
+            ? { ...currentSettings, ...nextUserSettings }
             : currentSettings,
         )
+
+        if (typeof nextUserSettings.idleTimeoutSeconds === 'number') {
+          setIdleTimeoutSeconds(nextUserSettings.idleTimeoutSeconds)
+        }
       }
     }
 
@@ -214,9 +218,7 @@ function Popup() {
         setDailyGoalMinutes(
           String(secondsToMinutes(loadedSettings.dailyGoalSeconds)),
         )
-        setIdleTimeoutMinutes(
-          String(secondsToMinutes(loadedSettings.idleTimeoutSeconds)),
-        )
+        setIdleTimeoutSeconds(loadedSettings.idleTimeoutSeconds)
         setTimezone(loadedSettings.timezone)
         setPathName(loadedPathProgress.pathName)
         setTotalEstimatedHours(String(loadedPathProgress.totalEstimatedHours))
@@ -276,22 +278,20 @@ function Popup() {
     saveGoalMinutes(Number(dailyGoalMinutes))
   }
 
-  const saveIdleTimeoutMinutes = (minutes: number) => {
-    if (!isValidIdleTimeoutMinutes(minutes)) {
-      setIdleTimeoutStatusText('Choose a timeout between 1 and 60 minutes.')
-      setIdleTimeoutMinutes(
-        settings ? String(secondsToMinutes(settings.idleTimeoutSeconds)) : '2',
-      )
+  const saveIdleTimeoutSeconds = (seconds: number) => {
+    if (!isIdleTimeoutPreset(seconds)) {
+      setIdleTimeoutStatusText('Choose one of the available timeout options.')
+      setIdleTimeoutSeconds(settings?.idleTimeoutSeconds ?? 2 * 60)
       return
     }
 
     setIdleTimeoutStatusText('Saving idle timeout...')
-    setIdleTimeoutMinutes(String(minutes))
-    void saveIdleTimeout(minutes * 60).then((nextSettings) => {
+    setIdleTimeoutSeconds(seconds)
+    void saveIdleTimeout(seconds).then((nextSettings) => {
       setSettings(nextSettings)
-      setIdleTimeoutMinutes(String(secondsToMinutes(nextSettings.idleTimeoutSeconds)))
+      setIdleTimeoutSeconds(nextSettings.idleTimeoutSeconds)
       setIdleTimeoutStatusText(
-        `Saved ${formatTimeoutMinutes(minutes)} idle timeout.`,
+        `Saved ${getIdleTimeoutPresetLabel(seconds) ?? formatActiveTime(seconds)} idle timeout.`,
       )
     })
   }
@@ -380,7 +380,7 @@ function Popup() {
       setSettings(nextSettings)
       setTrackingStatusMessage(
         nextSettings.trackingEnabled
-          ? 'Tracking is on. Scrimba activity will be counted.'
+          ? 'Tracking is on. Lesson playback and coding will be counted.'
           : 'Tracking is paused. No Scrimba activity will be counted.',
       )
       refreshTodayActivity()
@@ -405,9 +405,7 @@ function Popup() {
       setTotalEstimatedHours(String(nextStorage.pathProgress.totalEstimatedHours))
       setProgressPercentage(String(nextStorage.pathProgress.progressPercentage))
       setDailyGoalMinutes(String(secondsToMinutes(nextStorage.userSettings.dailyGoalSeconds)))
-      setIdleTimeoutMinutes(
-        String(secondsToMinutes(nextStorage.userSettings.idleTimeoutSeconds)),
-      )
+      setIdleTimeoutSeconds(nextStorage.userSettings.idleTimeoutSeconds)
       setDailyGoalError(null)
       setDailyGoalStatusText(null)
       setIdleTimeoutStatusText(null)
@@ -492,6 +490,14 @@ function Popup() {
   )
   const currentStreak = streakStatus?.currentStreak ?? 0
   const currentStreakUnit = currentStreak === 1 ? 'day' : 'days'
+  const learningStatusText =
+    settings?.trackingEnabled === false
+      ? 'Paused'
+      : isLiveActivityRunning
+        ? 'Tracking'
+        : currentScrimbaPage?.isIdle
+          ? 'Idle'
+          : 'Ready'
 
   return (
     <main
@@ -512,7 +518,7 @@ function Popup() {
             settings?.trackingEnabled === false ? 'is-paused' : 'is-active',
           ].filter(Boolean).join(' ')}
         >
-          {settings?.trackingEnabled === false ? 'Paused' : 'Tracking on'}
+          {learningStatusText}
         </span>
       </header>
 
@@ -642,7 +648,7 @@ function Popup() {
               <small>
                 {settings?.trackingEnabled === false
                   ? 'Paused across Scrimba pages'
-                  : 'Counting active Scrimba time'}
+                  : 'Counting lesson playback and coding'}
               </small>
             </span>
             <input
@@ -718,20 +724,20 @@ function Popup() {
               Current timeout <strong>{currentIdleTimeoutText}</strong>
             </span>
             <p className="settings-help-text">
-              Pauses tracking after Scrimba sits without interaction. Playing lesson media keeps tracking active while the tab is visible and focused.
+              Stops tracking after coding pauses without editor interaction. Playing lesson media keeps tracking active while the tab is visible and focused.
             </p>
             <div className="goal-control" role="group" aria-label="Idle timeout presets">
               <div className="segmented-control idle-timeout-presets">
-                {idleTimeoutPresetMinutes.map((minutes) => (
+                {idleTimeoutPresets.map((preset) => (
                   <button
-                    key={minutes}
+                    key={preset.seconds}
                     type="button"
                     className={
-                      Number(idleTimeoutMinutes) === minutes ? 'is-selected' : undefined
+                      idleTimeoutSeconds === preset.seconds ? 'is-selected' : undefined
                     }
-                    onClick={() => saveIdleTimeoutMinutes(minutes)}
+                    onClick={() => saveIdleTimeoutSeconds(preset.seconds)}
                   >
-                    {minutes}m
+                    {preset.label}
                   </button>
                 ))}
               </div>

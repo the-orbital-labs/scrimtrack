@@ -1030,6 +1030,7 @@
 }
 
 .idle-timeout-presets {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   max-width: 420px;
 }
 

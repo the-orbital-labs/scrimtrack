@@ -20,6 +20,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   persistence batched at five-second intervals.
 - Fixed the minimized floating widget to the bottom-right of the viewport while
   preserving the draggable expanded position.
+- Reduced the idle timeout presets to 10 seconds, 30 seconds, 1 minute,
+  2 minutes, and 3 minutes.
+- Limited active-time tracking to lesson playback and code-editor interaction;
+  browsing other Scrimba pages now leaves the tracker ready or idle.
 
 ## [0.2.5] - 2026-08-11
 
