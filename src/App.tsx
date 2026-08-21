@@ -756,7 +756,7 @@ function App() {
           >
             {settings?.floatingWidgetVisible ? 'Widget open' : 'Open widget'}
           </button>
-          <a className="settings-link" href="#dashboard-settings">
+          <a className="settings-link" href="#idle-timeout-settings">
             Settings
           </a>
         </div>
@@ -894,37 +894,139 @@ function App() {
         </div>
       </section>
 
-      <section className="summary-grid" aria-label="Key learning stats">
-        <SummaryStatCard
-          detail={todaySummaryDetail}
-          isEmpty={todayActiveSeconds === 0}
-          label="Today"
-          value={formatActiveTime(todayActiveSeconds)}
-        />
-        <SummaryStatCard
-          detail={weeklySummaryDetail}
-          isEmpty={weeklyActiveSeconds === 0}
-          label="This week"
-          value={formatActiveTime(weeklyActiveSeconds)}
-        />
-        <SummaryStatCard
-          detail={monthlySummaryDetail}
-          isEmpty={monthlyActiveSeconds === 0}
-          label="This month"
-          value={formatActiveTime(monthlyActiveSeconds)}
-        />
-        <SummaryStatCard
-          detail={streakSummaryDetail}
-          isEmpty={currentStreak === 0}
-          label="Current streak"
-          value={currentStreakLabel}
-        />
-        <SummaryStatCard
-          detail={allTimeSummaryDetail}
-          isEmpty={allTimeActiveSeconds === 0}
-          label="All-time"
-          value={formatActiveTime(allTimeActiveSeconds)}
-        />
+      <section className="panel idle-timeout-panel" id="idle-timeout-settings">
+        <div className="goal-settings-header">
+          <div>
+            <p className="eyebrow">Tracking settings</p>
+            <h2>Idle Timeout</h2>
+          </div>
+          <span>
+            Current timeout
+            <strong>{currentIdleTimeoutText}</strong>
+          </span>
+        </div>
+
+        <label className="tracking-toggle-card">
+          <span>
+            <strong>{trackingSettingText}</strong>
+            <small>
+              {settings?.trackingEnabled === false
+                ? 'No Scrimba activity is being tracked.'
+                : 'Lesson playback and code-editor activity are tracked while the page is active.'}
+            </small>
+          </span>
+          <input
+            type="checkbox"
+            checked={settings?.trackingEnabled ?? true}
+            onChange={toggleTracking}
+          />
+        </label>
+        {trackingStatusMessage ? (
+          <span className="save-status" role="status" aria-live="polite">
+            {trackingStatusMessage}
+          </span>
+        ) : null}
+
+        <p className="settings-help-text">
+          Idle timeout is how long coding can pause without editor interaction before tracking stops. Playing lesson media keeps tracking active while the Scrimba tab is visible and focused.
+        </p>
+
+        <div className="goal-control" role="group" aria-label="Idle timeout presets">
+          <div className="segmented-control idle-timeout-presets">
+            {idleTimeoutPresets.map((preset) => (
+              <button
+                key={preset.seconds}
+                type="button"
+                className={
+                  idleTimeoutSeconds === preset.seconds ? 'is-selected' : undefined
+                }
+                onClick={() => saveIdleTimeoutSeconds(preset.seconds)}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          {idleTimeoutStatusText ? (
+            <span className="save-status" role="status" aria-live="polite">
+              {idleTimeoutStatusText}
+            </span>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="panel" id="dashboard-settings">
+        <div className="goal-settings-header">
+          <div>
+            <p className="eyebrow">Goal settings</p>
+            <h2>Daily Goal</h2>
+          </div>
+          <span>
+            Current goal
+            <strong>{currentDailyGoalText}</strong>
+          </span>
+        </div>
+        <div className={`streak-state streak-state-${streakDisplay.tone}`}>
+          <strong>{streakDisplay.currentLabel}</strong>
+          <span>{streakDisplay.longestLabel}</span>
+          <p>{streakDisplay.message}</p>
+        </div>
+        <div className="goal-progress" aria-label="Today goal progress">
+          <div className="goal-progress-header">
+            <span>Today</span>
+            <strong>{progressText}</strong>
+          </div>
+          <div className="progress-track" aria-hidden="true">
+            <span style={{ width: `${goalProgress.visualPercentage}%` }} />
+          </div>
+          <p className="projection-line">
+            {goalProgress.isComplete
+              ? 'Goal complete'
+              : `${formatActiveTime(goalProgress.remainingSeconds)} remaining`}
+          </p>
+        </div>
+        <div className="dashboard-goal-row">
+          <div className="goal-control" role="group" aria-label="Daily goal presets">
+            <div className="segmented-control">
+              {dailyGoalPresetMinutes.map((minutes) => (
+                <button
+                  key={minutes}
+                  type="button"
+                  className={
+                    Number(dailyGoalMinutes) === minutes ? 'is-selected' : undefined
+                  }
+                  onClick={() => saveGoalMinutes(minutes)}
+                >
+                  {minutes}m
+                </button>
+              ))}
+            </div>
+            <div className="input-row dashboard-input-row goal-custom-row">
+              <input
+                max="1440"
+                min="1"
+                step="1"
+                type="number"
+                value={dailyGoalMinutes}
+                onChange={(event) => setDailyGoalMinutes(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    saveCustomGoal()
+                  }
+                }}
+              />
+              <span>min</span>
+              <button type="button" className="secondary-button" onClick={saveCustomGoal}>
+                Save
+              </button>
+            </div>
+          </div>
+          {dailyGoalError ? <span className="error-text">{dailyGoalError}</span> : null}
+          {dailyGoalStatusText ? (
+            <span className="save-status" role="status" aria-live="polite">
+              {dailyGoalStatusText}
+            </span>
+          ) : null}
+        </div>
       </section>
 
       <section className="panel pace-panel" aria-labelledby="pace-title">
@@ -966,77 +1068,6 @@ function App() {
             <strong>{finishDateLabel}</strong>
             <small>{finishDateText}</small>
           </span>
-        </div>
-      </section>
-
-      <section
-        className="panel progress-summary-section"
-        aria-labelledby="progress-summary-title"
-      >
-        <div className="panel-heading-row">
-          <div>
-            <p className="eyebrow">Progress summary</p>
-            <h2 id="progress-summary-title">Weekly and Monthly Recap</h2>
-          </div>
-          <span>Narrative recap</span>
-        </div>
-
-        <div className="progress-summary-grid">
-          <article className="summary-period-panel" aria-label="Weekly summary">
-            <div className="summary-period-header">
-              <h3>This Week</h3>
-              <span>{pluralizeActiveDays(weeklySummary?.activeDays ?? 0)}</span>
-            </div>
-            <ul className="weekly-summary-list">
-              {weeklySummaryLines.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-            <div className="weekly-summary-stats">
-              <span>
-                Best day
-                <strong>{weeklyBestDayText}</strong>
-              </span>
-              <span>
-                Previous week
-                <strong>{formatActiveTime(weeklySummary?.previousWeekActiveSeconds ?? 0)}</strong>
-              </span>
-              <span
-                className={`weekly-comparison weekly-comparison-${weeklySummary?.comparisonTrend ?? 'no-change'}`}
-              >
-                Change
-                <strong>{formatActiveTime(weeklyComparisonDifference)}</strong>
-                <small>{weeklyComparisonLabel}</small>
-              </span>
-            </div>
-          </article>
-
-          <article className="summary-period-panel" aria-label="Monthly summary">
-            <div className="summary-period-header">
-              <h3>This Month</h3>
-              <span>{pluralizeActiveDays(monthlySummary?.activeDays ?? 0)}</span>
-            </div>
-            <ul className="weekly-summary-list">
-              {monthlySummaryLines.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-            <div className="weekly-summary-stats">
-              <span>
-                Best day
-                <strong>{monthlyBestDayText}</strong>
-              </span>
-              <span>
-                Best week
-                <strong>{formatActiveTime(monthlySummary?.bestWeek?.activeSeconds ?? 0)}</strong>
-                <small>{monthlySummary?.bestWeek?.label ?? 'No activity yet'}</small>
-              </span>
-              <span>
-                Daily average
-                <strong>{formatActiveTime(monthlySummary?.dailyAverageSeconds ?? 0)}</strong>
-              </span>
-            </div>
-          </article>
         </div>
       </section>
 
@@ -1177,138 +1208,107 @@ function App() {
         ) : null}
       </section>
 
-      <section className="panel" id="dashboard-settings">
-        <div className="goal-settings-header">
-          <div>
-            <p className="eyebrow">Goal settings</p>
-            <h2>Daily Goal</h2>
-          </div>
-          <span>
-            Current goal
-            <strong>{currentDailyGoalText}</strong>
-          </span>
-        </div>
-        <div className={`streak-state streak-state-${streakDisplay.tone}`}>
-          <strong>{streakDisplay.currentLabel}</strong>
-          <span>{streakDisplay.longestLabel}</span>
-          <p>{streakDisplay.message}</p>
-        </div>
-        <div className="goal-progress" aria-label="Today goal progress">
-          <div className="goal-progress-header">
-            <span>Today</span>
-            <strong>{progressText}</strong>
-          </div>
-          <div className="progress-track" aria-hidden="true">
-            <span style={{ width: `${goalProgress.visualPercentage}%` }} />
-          </div>
-          <p className="projection-line">
-            {goalProgress.isComplete
-              ? 'Goal complete'
-              : `${formatActiveTime(goalProgress.remainingSeconds)} remaining`}
-          </p>
-        </div>
-        <div className="dashboard-goal-row">
-          <div className="goal-control" role="group" aria-label="Daily goal presets">
-            <div className="segmented-control">
-              {dailyGoalPresetMinutes.map((minutes) => (
-                <button
-                  key={minutes}
-                  type="button"
-                  className={
-                    Number(dailyGoalMinutes) === minutes ? 'is-selected' : undefined
-                  }
-                  onClick={() => saveGoalMinutes(minutes)}
-                >
-                  {minutes}m
-                </button>
-              ))}
-            </div>
-            <div className="input-row dashboard-input-row goal-custom-row">
-              <input
-                max="1440"
-                min="1"
-                step="1"
-                type="number"
-                value={dailyGoalMinutes}
-                onChange={(event) => setDailyGoalMinutes(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    saveCustomGoal()
-                  }
-                }}
-              />
-              <span>min</span>
-              <button type="button" className="secondary-button" onClick={saveCustomGoal}>
-                Save
-              </button>
-            </div>
-          </div>
-          {dailyGoalError ? <span className="error-text">{dailyGoalError}</span> : null}
-          {dailyGoalStatusText ? (
-            <span className="save-status" role="status" aria-live="polite">
-              {dailyGoalStatusText}
-            </span>
-          ) : null}
-        </div>
+      <section className="summary-grid" aria-label="Key learning stats">
+        <SummaryStatCard
+          detail={todaySummaryDetail}
+          isEmpty={todayActiveSeconds === 0}
+          label="Today"
+          value={formatActiveTime(todayActiveSeconds)}
+        />
+        <SummaryStatCard
+          detail={weeklySummaryDetail}
+          isEmpty={weeklyActiveSeconds === 0}
+          label="This week"
+          value={formatActiveTime(weeklyActiveSeconds)}
+        />
+        <SummaryStatCard
+          detail={monthlySummaryDetail}
+          isEmpty={monthlyActiveSeconds === 0}
+          label="This month"
+          value={formatActiveTime(monthlyActiveSeconds)}
+        />
+        <SummaryStatCard
+          detail={streakSummaryDetail}
+          isEmpty={currentStreak === 0}
+          label="Current streak"
+          value={currentStreakLabel}
+        />
+        <SummaryStatCard
+          detail={allTimeSummaryDetail}
+          isEmpty={allTimeActiveSeconds === 0}
+          label="All-time"
+          value={formatActiveTime(allTimeActiveSeconds)}
+        />
       </section>
 
-      <section className="panel idle-timeout-panel" id="idle-timeout-settings">
-        <div className="goal-settings-header">
+      <section
+        className="panel progress-summary-section"
+        aria-labelledby="progress-summary-title"
+      >
+        <div className="panel-heading-row">
           <div>
-            <p className="eyebrow">Tracking settings</p>
-            <h2>Idle Timeout</h2>
+            <p className="eyebrow">Progress summary</p>
+            <h2 id="progress-summary-title">Weekly and Monthly Recap</h2>
           </div>
-          <span>
-            Current timeout
-            <strong>{currentIdleTimeoutText}</strong>
-          </span>
+          <span>Narrative recap</span>
         </div>
 
-        <label className="tracking-toggle-card">
-          <span>
-            <strong>{trackingSettingText}</strong>
-            <small>
-              {settings?.trackingEnabled === false
-                ? 'No Scrimba activity is being tracked.'
-                : 'Lesson playback and code-editor activity are tracked while the page is active.'}
-            </small>
-          </span>
-          <input
-            type="checkbox"
-            checked={settings?.trackingEnabled ?? true}
-            onChange={toggleTracking}
-          />
-        </label>
-        {trackingStatusMessage ? (
-          <span className="save-status" role="status" aria-live="polite">
-            {trackingStatusMessage}
-          </span>
-        ) : null}
-
-        <p className="settings-help-text">
-          Idle timeout is how long coding can pause without editor interaction before tracking stops. Playing lesson media keeps tracking active while the Scrimba tab is visible and focused.
-        </p>
-
-        <div className="goal-control" role="group" aria-label="Idle timeout presets">
-          <div className="segmented-control idle-timeout-presets">
-            {idleTimeoutPresets.map((preset) => (
-              <button
-                key={preset.seconds}
-                type="button"
-                className={
-                  idleTimeoutSeconds === preset.seconds ? 'is-selected' : undefined
-                }
-                onClick={() => saveIdleTimeoutSeconds(preset.seconds)}
+        <div className="progress-summary-grid">
+          <article className="summary-period-panel" aria-label="Weekly summary">
+            <div className="summary-period-header">
+              <h3>This Week</h3>
+              <span>{pluralizeActiveDays(weeklySummary?.activeDays ?? 0)}</span>
+            </div>
+            <ul className="weekly-summary-list">
+              {weeklySummaryLines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            <div className="weekly-summary-stats">
+              <span>
+                Best day
+                <strong>{weeklyBestDayText}</strong>
+              </span>
+              <span>
+                Previous week
+                <strong>{formatActiveTime(weeklySummary?.previousWeekActiveSeconds ?? 0)}</strong>
+              </span>
+              <span
+                className={`weekly-comparison weekly-comparison-${weeklySummary?.comparisonTrend ?? 'no-change'}`}
               >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-          {idleTimeoutStatusText ? (
-            <span className="save-status" role="status" aria-live="polite">
-              {idleTimeoutStatusText}
-            </span>
-          ) : null}
+                Change
+                <strong>{formatActiveTime(weeklyComparisonDifference)}</strong>
+                <small>{weeklyComparisonLabel}</small>
+              </span>
+            </div>
+          </article>
+
+          <article className="summary-period-panel" aria-label="Monthly summary">
+            <div className="summary-period-header">
+              <h3>This Month</h3>
+              <span>{pluralizeActiveDays(monthlySummary?.activeDays ?? 0)}</span>
+            </div>
+            <ul className="weekly-summary-list">
+              {monthlySummaryLines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            <div className="weekly-summary-stats">
+              <span>
+                Best day
+                <strong>{monthlyBestDayText}</strong>
+              </span>
+              <span>
+                Best week
+                <strong>{formatActiveTime(monthlySummary?.bestWeek?.activeSeconds ?? 0)}</strong>
+                <small>{monthlySummary?.bestWeek?.label ?? 'No activity yet'}</small>
+              </span>
+              <span>
+                Daily average
+                <strong>{formatActiveTime(monthlySummary?.dailyAverageSeconds ?? 0)}</strong>
+              </span>
+            </div>
+          </article>
         </div>
       </section>
 
