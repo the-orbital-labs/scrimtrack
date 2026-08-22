@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import '../App.css'
 import { getActivityForDate, recalculateStreakStatus } from '../activity'
 import { downloadLocalDataExport } from '../dataExport'
@@ -107,20 +107,20 @@ function Popup() {
   const [exportStatusText, setExportStatusText] = useState<string | null>(null)
   const [resetStatusText, setResetStatusText] = useState<string | null>(null)
 
+  const syncProjection = useCallback((projection: PathProjection) => {
+    setFinishDateText(getFinishEstimateText(projection))
+    setAveragePaceSeconds(projection.averageDailySeconds)
+    setCompletedHours(projection.completedHours)
+    setRemainingHours(projection.remainingHours)
+  }, [])
+
   const refreshProjection = () => {
     void getPathProjection().then((projection) => {
       syncProjection(projection)
     })
   }
 
-  const syncProjection = (projection: PathProjection) => {
-    setFinishDateText(getFinishEstimateText(projection))
-    setAveragePaceSeconds(projection.averageDailySeconds)
-    setCompletedHours(projection.completedHours)
-    setRemainingHours(projection.remainingHours)
-  }
-
-  const refreshTodayActivity = () => {
+  const refreshTodayActivity = useCallback(() => {
     void Promise.all([
       getActivityForDate(new Date()),
       getStorageValue('streakStatus'),
@@ -136,7 +136,7 @@ function Popup() {
       setCurrentScrimbaPage(currentPage)
       syncProjection(projection)
     })
-  }
+  }, [syncProjection])
 
   useEffect(() => {
     let isMounted = true
@@ -248,7 +248,7 @@ function Popup() {
         }
       }
     }
-  }, [])
+  }, [refreshTodayActivity, syncProjection])
 
   const syncPathProgress = (nextPathProgress: PathProgress) => {
     setPathProgress(nextPathProgress)
