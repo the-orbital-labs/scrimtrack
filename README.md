@@ -31,15 +31,15 @@ ScrimTrack helps you understand your Scrimba learning habits without accounts, s
 
 | Scrimba integration | Embedded activity dashboard |
 | --- | --- |
-| ![ScrimTrack tab and floating tracker on the Scrimba dashboard](public/screenshot-1.jpg) | ![ScrimTrack activity calendar and learning statistics embedded in Scrimba](public/screenshot-2.jpg) |
+| ![ScrimTrack floating tracker on the Scrimba dashboard](public/screenshot_1.jpg) | ![ScrimTrack activity calendar and learning statistics embedded in Scrimba](public/screenshot_2.jpg) |
 
-| Progress and path projection | Path and goal setup |
+| Tracking and daily goals | Path progress and projection |
 | --- | --- |
-| ![ScrimTrack learning pace projection with weekly and monthly recaps](public/screenshot-3.jpg) | ![ScrimTrack learning path and daily goal settings](public/screenshot-4.jpg) |
+| ![ScrimTrack tracking timeout and daily goal settings](public/screenshot_3.jpg) | ![ScrimTrack learning pace and finish-date projection](public/screenshot_4.jpg) |
 
-| Tracking, privacy, and local data |
-| --- |
-| ![ScrimTrack idle timeout, local-only privacy, export, and reset controls](public/screenshot-5.jpg) |
+| Path setup and progress recaps | Privacy and local data |
+| --- | --- |
+| ![ScrimTrack path setup with weekly and monthly progress recaps](public/screenshot_5.jpg) | ![ScrimTrack progress recap, local-only privacy, export, and reset controls](public/screenshot_6.jpg) |
 
 ## Privacy
 

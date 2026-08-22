@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-21
+
 ### Added
 
 - Added a selectable Scrimba path and course picker with built-in Fullstack,
@@ -17,6 +19,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   main dashboard.
 - Added completed seconds to active-time displays in the floating widget,
   dashboard, popup, summaries, and heatmap tooltips.
+- Added contribution and security documentation, a code of conduct, and GitHub
+  issue and pull request templates.
 
 ### Changed
 
@@ -28,6 +32,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   2 minutes, and 3 minutes.
 - Limited active-time tracking to lesson playback and code-editor interaction;
   browsing other Scrimba pages now leaves the tracker ready or idle.
+- Reordered the dashboard around the activity calendar, key learning stats,
+  tracking and goal settings, path progress, and weekly and monthly recaps.
+- Expanded the privacy documentation and refreshed the README screenshot
+  gallery to reflect the current interface.
+
+### Fixed
+
+- Removed the border around the current day in the activity heatmap so its
+  color consistently represents tracked learning intensity.
 
 ## [0.2.5] - 2026-08-11
 
