@@ -23,11 +23,13 @@ Privacy features:
 
 You can export your local data as JSON or reset it from the extension settings.
 
-## What's New in Version 0.2.4
+## What's New in Version 0.3.0
 
-- Fixed lesson tracking incorrectly switching to idle while Scrimba media is playing.
-- Playback now keeps tracking active without requiring mouse or keyboard movement.
-- Tracking still pauses normally when playback stops or the Scrimba tab is no longer active.
+- Select a Scrimba learning path or discovered course and sync visible course progress.
+- See completed seconds throughout the tracker, dashboard, popup, summaries, and heatmap tooltips.
+- Close the floating tracker when it is not needed and reopen it from the dashboard.
+- Get more accurate active-time tracking focused on lesson playback and code-editor interaction.
+- Use the streamlined dashboard layout and shorter tracking timeout options.
 - No new permissions are required.
 
 ## Permissions
