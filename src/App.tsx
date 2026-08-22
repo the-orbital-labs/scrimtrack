@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 import {
   getActivityForDate,
@@ -191,15 +191,15 @@ function App() {
   const [exportStatusText, setExportStatusText] = useState<string | null>(null)
   const [resetStatusText, setResetStatusText] = useState<string | null>(null)
 
-  const syncProjection = (projection: PathProjection) => {
+  const syncProjection = useCallback((projection: PathProjection) => {
     setFinishDateText(getFinishEstimateText(projection, 'full'))
     setFinishDateLabel(projection.finishDateLabel ?? 'Not estimated yet')
     setAveragePaceSeconds(projection.averageDailySeconds)
     setCompletedHours(projection.completedHours)
     setRemainingHours(projection.remainingHours)
-  }
+  }, [])
 
-  const refreshTodayActivity = () => {
+  const refreshTodayActivity = useCallback(() => {
     void Promise.all([
       getActivityForDate(new Date()),
       getStorageValue('streakStatus'),
@@ -236,7 +236,7 @@ function App() {
         syncProjection(projection)
       },
     )
-  }
+  }, [syncProjection])
 
   useEffect(() => {
     let isMounted = true
@@ -361,7 +361,7 @@ function App() {
         }
       }
     }
-  }, [])
+  }, [refreshTodayActivity, syncProjection])
 
   const saveGoalMinutes = (minutes: number) => {
     if (!isValidDailyGoalMinutes(minutes)) {
