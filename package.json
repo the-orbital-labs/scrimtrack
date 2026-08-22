@@ -10,7 +10,7 @@
   "bugs": {
     "url": "https://github.com/the-orbital-labs/scrimtrack/issues"
   },
-  "homepage": "https://theorbitallabs.com/scrimtrack",
+  "homepage": "https://scrimtrack.xyz",
   "engines": {
     "node": ">=24"
   },
