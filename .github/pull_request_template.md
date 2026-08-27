@@ -15,6 +15,7 @@
 <!-- Describe automated and manual testing, including the relevant Scrimba site. -->
 
 - [ ] `npm run lint`
+- [ ] `npm test`
 - [ ] `npm run build`
 - [ ] Tested the affected behavior in the unpacked extension, or manual testing is not applicable.
 
