@@ -1,9 +1,10 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
     clearMocks: true,
     environment: 'node',
+    exclude: [...configDefaults.exclude, 'tests/e2e/**'],
     pool: 'threads',
     restoreMocks: true,
     setupFiles: ['./src/test/setup.ts'],

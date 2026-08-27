@@ -37,14 +37,19 @@ logs.
 ## Local Development
 
 You will need Git, Node.js 24, npm, and a Chromium-based browser that can load
-unpacked extensions.
-
-Fork the repository, then clone your fork and install the locked dependencies:
+unpacked extensions. Fork the repository, then clone your fork and install the
+locked dependencies:
 
 ```bash
 git clone https://github.com/<your-github-username>/scrimtrack.git
 cd scrimtrack
 npm ci
+```
+
+Install the Chromium build used by the automated end-to-end tests:
+
+```bash
+npx playwright install chromium
 ```
 
 Create a focused branch from an up-to-date `main` branch:
@@ -91,7 +96,12 @@ request:
 npm run lint
 npm test
 npm run build
+npm run test:e2e
 ```
+
+`npm run test:e2e` launches the built extension in Chromium and checks its
+popup, dashboard, local storage, and supported-site integration. Run
+`npm run test:e2e:headed` when you want to watch those checks in a browser.
 
 Also test the affected behavior manually in the unpacked extension. For
 tracking changes, verify that activity is recorded only on supported Scrimba
