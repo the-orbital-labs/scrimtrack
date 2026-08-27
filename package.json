@@ -22,7 +22,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "check": "npm run lint && npm run test && npm run build",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "check": "npm run lint && npm run test && npm run build && npm run test:e2e",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -31,6 +33,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.6",
