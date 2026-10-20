@@ -71,48 +71,48 @@ const getStorageValue = <Value>(
   key: string,
   fallbackValue: Value,
 ): Promise<Value> =>
-  new Promise((resolve) => {
+  new Promise((resolve, reject) => {
     try {
       if (!isExtensionContextValid()) {
-        resolve(fallbackValue)
-        return
+        throw new Error('Extension unavailable. Reload and try again.')
       }
 
       chrome.storage.local.get(key, (items) => {
         try {
           if (chrome.runtime.lastError) {
-            resolve(fallbackValue)
-            return
+            throw new Error(chrome.runtime.lastError.message ?? 'Storage read failed')
           }
-        } catch {
-          resolve(fallbackValue)
+        } catch (error) {
+          reject(error)
           return
         }
 
         resolve((items[key] as Value | undefined) ?? fallbackValue)
       })
-    } catch {
-      resolve(fallbackValue)
+    } catch (error) {
+      reject(error)
     }
   })
 
 const setStorageValue = <Value>(key: string, value: Value): Promise<boolean> =>
-  new Promise((resolve) => {
+  new Promise((resolve, reject) => {
     try {
       if (!isExtensionContextValid()) {
-        resolve(false)
-        return
+        throw new Error('Extension unavailable. Reload and try again.')
       }
 
       chrome.storage.local.set({ [key]: value }, () => {
         try {
-          resolve(!chrome.runtime.lastError)
-        } catch {
-          resolve(false)
+          if (chrome.runtime.lastError) {
+            throw new Error(chrome.runtime.lastError.message ?? 'Storage write failed')
+          }
+          resolve(true)
+        } catch (error) {
+          reject(error)
         }
       })
-    } catch {
-      resolve(false)
+    } catch (error) {
+      reject(error)
     }
   })
 
@@ -239,6 +239,7 @@ const getPageTitle = (): string | null => {
 type UserActivityEventType = 'code-interaction' | 'media-playback'
 
 type RuntimeResponse = {
+  error?: string
   isIdle?: boolean
   ok?: boolean
   trackingEnabled?: boolean
@@ -348,21 +349,31 @@ if (
   ): boolean => {
     try {
       if (!isExtensionContextValid()) {
+        reportStorageError()
         return false
       }
 
       chrome.runtime.sendMessage(message, (response) => {
         try {
-          void chrome.runtime.lastError
+          if (chrome.runtime.lastError) {
+            reportStorageError()
+            callback?.(undefined)
+            return
+          }
         } catch {
+          reportStorageError()
           callback?.(undefined)
           return
         }
 
+        if (isRuntimeResponse(response) && response.error === 'storage-failure') {
+          reportStorageError()
+        }
         callback?.(response)
       })
       return true
     } catch {
+      reportStorageError()
       return false
     }
   }
@@ -1601,6 +1612,17 @@ if (
   }
 
   const widget = createWidget()
+  let hasStorageError = false
+  const reportStorageError = () => {
+    hasStorageError = true
+    isWidgetTimerRunning = false
+    if (widget) {
+      widget.host.hidden = false
+      widget.statusText!.textContent = 'Local data error. Reload and try again.'
+      widget.statusText!.setAttribute('role', 'alert')
+      widget.collapsedStatus!.textContent = 'Local data error'
+    }
+  }
   let widgetDisplayedActiveSeconds = 0
   let widgetDisplayDate = getLocalDateKey()
   let widgetGoalSeconds = defaultUserSettings.dailyGoalSeconds
@@ -1720,13 +1742,13 @@ if (
     }
 
     expandedWidgetPosition = position
-    void setStorageValue<WidgetPosition>(widgetPositionStorageKey, position)
+    void setStorageValue<WidgetPosition>(widgetPositionStorageKey, position).catch(reportStorageError)
   }
 
   if (widget) {
     void getUserSettings().then((settings) => {
       setWidgetVisible(settings.floatingWidgetVisible)
-    })
+    }).catch(reportStorageError)
 
     void getStorageValue<WidgetPosition | null>(
       widgetPositionStorageKey,
@@ -1743,7 +1765,7 @@ if (
           applyWidgetPosition(position)
         }
       }
-    })
+    }).catch(reportStorageError)
 
     let draggedPointerId: number | null = null
     let pointerOffsetX = 0
@@ -1909,7 +1931,7 @@ if (
       const today = getLocalDateKey()
 
       isWidgetTimerRunning =
-        !trackingPaused &&
+        !hasStorageError && !trackingPaused &&
         statusText === 'Tracking'
       widgetGoalSeconds = progress.goalSeconds
       widgetGoalCompleted = progress.isComplete
@@ -1935,8 +1957,10 @@ if (
         )
       }
 
-      widget.statusText!.textContent = statusText
-      widget.collapsedStatus!.textContent = statusText
+      if (!hasStorageError) {
+        widget.statusText!.textContent = statusText
+        widget.collapsedStatus!.textContent = statusText
+      }
       widget.toggleTracking!.textContent = trackingPaused ? 'Resume' : 'Pause'
       renderWidgetTime()
 
@@ -1946,7 +1970,7 @@ if (
       })
     }).finally(() => {
       isWidgetRefreshing = false
-    })
+    }).catch(reportStorageError)
   }
 
   widget?.openDashboard?.addEventListener('click', openDashboard, {
@@ -1960,8 +1984,7 @@ if (
   })
   widget?.closeButtons.forEach((closeButton) => {
     closeButton.addEventListener('click', () => {
-      setWidgetVisible(false)
-      void saveFloatingWidgetVisible(false)
+      void saveFloatingWidgetVisible(false).then(() => setWidgetVisible(false)).catch(reportStorageError)
     }, { signal: listenerController.signal })
   })
   widget?.toggleTracking?.addEventListener('click', () => {
@@ -1971,7 +1994,7 @@ if (
       if (!nextTrackingEnabled) {
         void stopActiveSession(false)
           .then(() => saveTrackingEnabled(false))
-          .then(refreshWidget)
+          .then(refreshWidget).catch(reportStorageError)
         return
       }
 
@@ -1979,14 +2002,14 @@ if (
         lastMediaPlaybackHeartbeatAt = 0
         checkMediaPlayback()
         refreshWidget()
-      })
-    })
+      }).catch(reportStorageError)
+    }).catch(reportStorageError)
   }, { signal: listenerController.signal })
 
   console.info('ScrimTrack content script ready')
 
   const cleanup = () => {
-    void stopActiveSession(false)
+    void stopActiveSession(false).catch(reportStorageError)
     stopMediaPlaybackMonitor()
     stopWidgetRefresh()
     stopWidgetDisplay()
@@ -2022,7 +2045,7 @@ if (
       return
     }
 
-    void stopActiveSession()
+    void stopActiveSession().catch(reportStorageError)
   }
 
   const handleCodeEditorActivity = (event: Event) => {

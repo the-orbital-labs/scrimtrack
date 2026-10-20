@@ -167,52 +167,45 @@ const isExtensionContextValid = (): boolean => {
   }
 }
 
-const isExtensionContextInvalidatedError = (error: unknown): boolean =>
-  error instanceof Error && /extension context invalidated/i.test(error.message)
+export class StorageError extends Error {
+  readonly operation: 'read' | 'write'
+  readonly key: StorageKey
 
-const logStorageError = (operation: string): boolean => {
-  try {
-    const error = chrome.runtime.lastError
-
-    if (!error) {
-      return false
-    }
-
-    if (!/extension context invalidated/i.test(error.message ?? '')) {
-      console.warn(`Storage ${operation} failed: ${error.message ?? 'Unknown error'}`)
-    }
-
-    return true
-  } catch {
-    return true
+  constructor(
+    operation: 'read' | 'write',
+    key: StorageKey,
+    cause: unknown,
+  ) {
+    super(`Could not ${operation} local data (${key}).`, { cause })
+    this.name = 'StorageError'
+    this.operation = operation
+    this.key = key
   }
 }
 
 export const getStorageValue = <Key extends StorageKey>(
   key: Key,
 ): Promise<StorageSchema[Key]> =>
-  new Promise((resolve) => {
+  new Promise((resolve, reject) => {
     try {
       if (!isExtensionContextValid()) {
-        resolve(getDefaultStorageValue(key))
-        return
+        throw new Error('Extension unavailable. Reload the page and try again.')
       }
 
       chrome.storage.local.get(key, (items) => {
-        if (logStorageError(`read for ${key}`)) {
-          resolve(getDefaultStorageValue(key))
-          return
+        try {
+          if (chrome.runtime.lastError) {
+            throw new Error(chrome.runtime.lastError.message ?? 'Storage read failed')
+          }
+
+          const value = items[key] as StorageSchema[Key] | undefined
+          resolve(withDefaultStorageValue(key, value))
+        } catch (error) {
+          reject(new StorageError('read', key, error))
         }
-
-        const value = items[key] as StorageSchema[Key] | undefined
-
-        resolve(withDefaultStorageValue(key, value))
       })
     } catch (error) {
-      if (!isExtensionContextInvalidatedError(error)) {
-        console.warn(`Storage read for ${key} failed:`, error)
-      }
-      resolve(getDefaultStorageValue(key))
+      reject(new StorageError('read', key, error))
     }
   })
 
@@ -220,21 +213,24 @@ export const setStorageValue = <Key extends StorageKey>(
   key: Key,
   value: StorageSchema[Key],
 ): Promise<boolean> =>
-  new Promise((resolve) => {
+  new Promise((resolve, reject) => {
     try {
       if (!isExtensionContextValid()) {
-        resolve(false)
-        return
+        throw new Error('Extension unavailable. Reload the page and try again.')
       }
 
       chrome.storage.local.set({ [key]: value }, () => {
-        resolve(!logStorageError(`write for ${key}`))
+        try {
+          if (chrome.runtime.lastError) {
+            throw new Error(chrome.runtime.lastError.message ?? 'Storage write failed')
+          }
+          resolve(true)
+        } catch (error) {
+          reject(new StorageError('write', key, error))
+        }
       })
     } catch (error) {
-      if (!isExtensionContextInvalidatedError(error)) {
-        console.warn(`Storage write for ${key} failed:`, error)
-      }
-      resolve(false)
+      reject(new StorageError('write', key, error))
     }
   })
 
