@@ -106,6 +106,7 @@ function Popup() {
   const [pathSaveStatusText, setPathSaveStatusText] = useState<string | null>(null)
   const [exportStatusText, setExportStatusText] = useState<string | null>(null)
   const [resetStatusText, setResetStatusText] = useState<string | null>(null)
+  const [storageError, setStorageError] = useState<string | null>(null)
 
   const syncProjection = useCallback((projection: PathProjection) => {
     setFinishDateText(getFinishEstimateText(projection))
@@ -117,6 +118,8 @@ function Popup() {
   const refreshProjection = () => {
     void getPathProjection().then((projection) => {
       syncProjection(projection)
+    }).catch(() => {
+      setStorageError('Could not load local data. Displayed values may be out of date. Reload and try again.')
     })
   }
 
@@ -135,6 +138,8 @@ function Popup() {
       setWeeklyTimeStats(weekStats)
       setCurrentScrimbaPage(currentPage)
       syncProjection(projection)
+    }).catch(() => {
+      setStorageError('Could not load local data. Displayed values may be out of date. Reload and try again.')
     })
   }, [syncProjection])
 
@@ -165,7 +170,11 @@ function Popup() {
           setPathProgress(nextPathProgress)
           setTotalEstimatedHours(String(nextPathProgress.totalEstimatedHours))
           setProgressPercentage(String(nextPathProgress.progressPercentage))
-          void getPathProjection().then(syncProjection)
+          void getPathProjection().then(syncProjection).catch(() => {
+            setStorageError('Could not load local data. Displayed values may be out of date. Reload and try again.')
+          })
+        }).catch(() => {
+          setStorageError('Could not load local data. Displayed values may be out of date. Reload and try again.')
         })
       }
 
@@ -235,7 +244,9 @@ function Popup() {
         setTotalEstimatedHours(String(loadedPathProgress.totalEstimatedHours))
         setProgressPercentage(String(loadedPathProgress.progressPercentage))
       },
-    )
+    ).catch(() => {
+      setStorageError('Could not load local data. Displayed values may be out of date. Reload and try again.')
+    })
 
     return () => {
       isMounted = false
@@ -279,7 +290,7 @@ function Popup() {
       )
       refreshTodayActivity()
     }).catch(() => {
-      setDailyGoalError('Enter 1-1440 minutes.')
+      setDailyGoalError('Could not save the daily goal. Reload and try again.')
       setDailyGoalStatusText(null)
     })
   }
@@ -303,6 +314,8 @@ function Popup() {
       setIdleTimeoutStatusText(
         `Saved ${getIdleTimeoutPresetLabel(seconds) ?? formatActiveTime(seconds)} idle timeout.`,
       )
+    }).catch(() => {
+      setIdleTimeoutStatusText('Could not save the idle timeout. Reload and try again.')
     })
   }
 
@@ -310,6 +323,8 @@ function Popup() {
     void saveTimezone(timezone).then((nextSettings) => {
       setSettings(nextSettings)
       setTimezone(nextSettings.timezone)
+    }).catch(() => {
+      setStorageError('Could not save settings. Reload and try again.')
     })
   }
 
@@ -326,6 +341,9 @@ function Popup() {
           ? 'Selected course and synced its Scrimba progress.'
           : 'Selected course. Open it on Scrimba to sync visible progress.',
       )
+    }).catch(() => {
+      setPathSaveStatusText(null)
+      setPathError('Could not save path settings. Reload and try again.')
     })
   }
 
@@ -343,6 +361,9 @@ function Popup() {
     void saveTotalEstimatedHours(hours).then((nextPathProgress) => {
       syncPathProgress(nextPathProgress)
       setPathSaveStatusText('Saved total estimate.')
+    }).catch(() => {
+      setPathSaveStatusText(null)
+      setPathError('Could not save path settings. Reload and try again.')
     })
   }
 
@@ -360,6 +381,9 @@ function Popup() {
     void saveProgressPercentage(percentage).then((nextPathProgress) => {
       syncPathProgress(nextPathProgress)
       setPathSaveStatusText('Saved progress.')
+    }).catch(() => {
+      setPathSaveStatusText(null)
+      setPathError('Could not save path settings. Reload and try again.')
     })
   }
 
@@ -374,6 +398,9 @@ function Popup() {
     void saveAverageWindowDays(averageWindowDays).then((nextPathProgress) => {
       syncPathProgress(nextPathProgress)
       setPathSaveStatusText('Saved average window.')
+    }).catch(() => {
+      setPathSaveStatusText(null)
+      setPathError('Could not save path settings. Reload and try again.')
     })
   }
 
@@ -395,6 +422,8 @@ function Popup() {
           : 'Tracking is paused. No Scrimba activity will be counted.',
       )
       refreshTodayActivity()
+    }).catch(() => {
+      setTrackingStatusMessage('Could not update tracking. Reload to check its current state and try again.')
     })
   }
 
@@ -429,6 +458,8 @@ function Popup() {
       )
       refreshTodayActivity()
       refreshProjection()
+    }).catch(() => {
+      setResetStatusText('Reset could not be completed. Some data may have changed. Reload to check and try again.')
     })
   }
 
@@ -531,6 +562,12 @@ function Popup() {
       ].filter(Boolean).join(' ')}
       aria-label="ScrimTrack popup"
     >
+      {storageError ? (
+        <div role="alert">
+          <p>{storageError}</p>
+          <button type="button" onClick={() => window.location.reload()}>Reload</button>
+        </div>
+      ) : null}
       <header className="popup-header">
         <div>
           <p className="eyebrow">Scrimba tracker</p>

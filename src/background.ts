@@ -266,7 +266,9 @@ chrome.runtime.onInstalled.addListener(() => {
     ensureUserSettings(),
     ensurePathProgress(),
     recalculateStreakStatus(),
-  ])
+  ]).catch((error: unknown) => {
+    console.warn('ScrimTrack could not initialize local data:', error)
+  })
 
   console.info('ScrimTrack installed')
 })
@@ -278,7 +280,9 @@ chrome.runtime.onStartup.addListener(() => {
       ...startupSnapshot(),
     })),
     recalculateStreakStatus(),
-  ])
+  ]).catch((error: unknown) => {
+    console.warn('ScrimTrack could not initialize local data:', error)
+  })
 
   console.info('ScrimTrack service worker started')
 })
@@ -292,6 +296,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           pathProgress.selectedCourseId === message.course.id,
         progressPercentage: pathProgress.progressPercentage,
       })
+    }).catch((error: unknown) => {
+      console.warn('ScrimTrack could not save tracking data:', error)
+      sendResponse({ ok: false, error: 'storage-failure' })
     })
 
     return true
@@ -331,9 +338,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         )
       }
 
-      void Promise.all(writes).then(([ok]) => {
+      return Promise.all(writes).then(([ok]) => {
         sendResponse({ ok, trackingEnabled: true })
       })
+    }).catch((error: unknown) => {
+      console.warn('ScrimTrack could not save tracking data:', error)
+      sendResponse({ ok: false, error: 'storage-failure' })
     })
 
     return true
@@ -346,7 +356,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return
       }
 
-      void updateStorageValue('currentScrimbaPage', (currentScrimbaPage) => {
+      return updateStorageValue('currentScrimbaPage', (currentScrimbaPage) => {
         const isCurrentSession =
           currentScrimbaPage?.sessionId === message.sessionId
 
@@ -388,7 +398,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             }).then(() => setLearningSessionActiveState(message.sessionId, true))
           : setLearningSessionActiveState(message.sessionId, false)
 
-        void sessionUpdate.then(() => {
+        return sessionUpdate.then(() => {
           sendResponse({
             ok: isCurrentSession,
             isActive: currentScrimbaPage?.isActive ?? false,
@@ -396,6 +406,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           })
         })
       })
+    }).catch((error: unknown) => {
+      console.warn('ScrimTrack could not save tracking data:', error)
+      sendResponse({ ok: false, error: 'storage-failure' })
     })
 
     return true
@@ -408,7 +421,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return
       }
 
-      void getStorageValue('currentScrimbaPage').then((currentScrimbaPage) => {
+      return getStorageValue('currentScrimbaPage').then((currentScrimbaPage) => {
         const isCurrentSession =
           currentScrimbaPage?.sessionId === message.sessionId
         const countableActiveSeconds =
@@ -443,7 +456,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
               }).then(() => closeLearningSession(message.sessionId, endedAt))
             : closeLearningSession(message.sessionId, endedAt)
 
-        void Promise.all([
+        return Promise.all([
           updateStorageValue('currentScrimbaPage', (currentPage) => {
             if (currentPage?.sessionId !== message.sessionId) {
               return currentPage
@@ -466,6 +479,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           })
         })
       })
+    }).catch((error: unknown) => {
+      console.warn('ScrimTrack could not save tracking data:', error)
+      sendResponse({ ok: false, error: 'storage-failure' })
     })
 
     return true
@@ -478,7 +494,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return
       }
 
-      void updateStorageValue('currentScrimbaPage', (currentScrimbaPage) => {
+      return updateStorageValue('currentScrimbaPage', (currentScrimbaPage) => {
         if (currentScrimbaPage?.sessionId !== message.sessionId) {
           return currentScrimbaPage
         }
@@ -502,6 +518,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           trackingEnabled: true,
         })
       })
+    }).catch((error: unknown) => {
+      console.warn('ScrimTrack could not save tracking data:', error)
+      sendResponse({ ok: false, error: 'storage-failure' })
     })
 
     return true
@@ -514,7 +533,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return
       }
 
-      void getStorageValue('currentScrimbaPage').then((currentScrimbaPage) => {
+      return getStorageValue('currentScrimbaPage').then((currentScrimbaPage) => {
         if (
           currentScrimbaPage?.sessionId !== message.sessionId ||
           !currentScrimbaPage.isActive ||
@@ -549,7 +568,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           : message.recordedAt
 
         if (countableActiveSeconds === 0 && isNowIdle) {
-          void Promise.all([
+          return Promise.all([
             updateStorageValue('currentScrimbaPage', (currentPage) => {
               if (currentPage?.sessionId !== message.sessionId) {
                 return currentPage
@@ -572,7 +591,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
               trackingEnabled: true,
             })
           })
-          return
         }
 
         const endedAt = getCountableEndedAt(
@@ -581,15 +599,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           countableActiveSeconds,
         )
 
-        void addActiveSecondsForInterval({
+        return addActiveSecondsForInterval({
           activeSeconds: countableActiveSeconds,
           endedAt,
           sessionId: message.sessionId,
           url: message.url,
           title: message.title,
-        }).then(() => {
+        }).then(async () => {
           if (isNowIdle) {
-            void Promise.all([
+            await Promise.all([
               updateStorageValue('currentScrimbaPage', (currentPage) => {
                 if (currentPage?.sessionId !== message.sessionId) {
                   return currentPage
@@ -615,6 +633,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           })
         })
       })
+    }).catch((error: unknown) => {
+      console.warn('ScrimTrack could not save tracking data:', error)
+      sendResponse({ ok: false, error: 'storage-failure' })
     })
 
     return true

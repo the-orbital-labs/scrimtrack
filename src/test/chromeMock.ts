@@ -163,3 +163,25 @@ export const installChromeMock = (
 export const uninstallChromeMock = () => {
   Reflect.deleteProperty(globalThis, 'chrome')
 }
+
+// Chrome exposes lastError only while the failing operation's callback runs.
+export const failNextStorageOperation = (operation: 'get' | 'set') => {
+  const fail = (callback: () => void) => {
+    chrome.runtime.lastError = { message: 'Simulated storage failure' }
+    try {
+      callback()
+    } finally {
+      delete chrome.runtime.lastError
+    }
+  }
+
+  if (operation === 'get') {
+    vi.spyOn(chrome.storage.local, 'get').mockImplementationOnce((_, callback) => {
+      fail(() => callback({}))
+    })
+  } else {
+    vi.spyOn(chrome.storage.local, 'set').mockImplementationOnce((_, callback) => {
+      fail(() => callback?.())
+    })
+  }
+}
