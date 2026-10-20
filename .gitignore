@@ -25,3 +25,7 @@ test-results
 *.njsproj
 *.sln
 *.sw?
+
+brag-output*
+.claude
+.agents/skills/brag
