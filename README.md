@@ -134,6 +134,34 @@ Keep each operation's reads and writes inside the mutation, and await every
 write before it completes. Content scripts send mutation commands through
 `chrome.runtime.sendMessage`; reads can still use `chrome.storage.local` directly.
 
+### Browser tests
+
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
+
+Playwright builds the extension before each suite, loads it into a fresh Chromium
+profile per test, and waits for a queued page-to-worker mutation before seeding
+storage. The startup version field alone is not a completion signal: it is written
+concurrently with settings, path, and streak initialization. Test contexts use UTC;
+calendar rendering tests explicitly choose their dates and saved timezones.
+
+The suite uses locally fulfilled web pages, not live Scrimba. Time-counting tests
+use real content-script timers, editor input, runtime messages, and persisted
+daily/session totals. The six-second observation windows deliberately span a full
+tracking pulse to verify that paused or inactive pages stop accumulating time.
+
+Run `npx playwright test --repeat-each=3 --retries=0` to check stability without
+retries hiding failures. Failed tests retain traces and browser logs in
+`test-results/`; CI uploads those files as `browser-test-results`. Open a trace
+with `npx playwright show-trace <path-to-trace.zip>`.
+
+Add regression tests in the same change as each storage, tracking, or calendar
+fix. Use unit tests for boundary cases and browser tests when the behavior crosses
+content-script, worker, storage, or view boundaries. Do not defer coverage to a
+separate testing milestone.
+
 ## Disclaimer
 
 ScrimTrack is an unofficial project and is not affiliated with, endorsed by, or sponsored by Scrimba.

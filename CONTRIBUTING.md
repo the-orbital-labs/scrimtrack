@@ -84,6 +84,9 @@ To try it in Chrome:
   discussion and a clear need.
 - Update documentation when behavior, setup, permissions, or privacy details
   change.
+- Add regression tests with each fix. Cover cross-context storage and tracking
+  behavior in the browser suite alongside focused unit tests; do not postpone
+  coverage until a later testing milestone.
 - Add an entry under `Unreleased` in `CHANGELOG.md` for user-visible changes.
 - Include before-and-after screenshots for significant interface changes.
 
@@ -99,7 +102,7 @@ npm run build
 npm run test:e2e
 ```
 
-`npm run test:e2e` launches the built extension in Chromium and checks its
+`npm run test:e2e` builds and launches the extension in Chromium and checks its
 popup, dashboard, local storage, and supported-site integration. Run
 `npm run test:e2e:headed` when you want to watch those checks in a browser.
 
