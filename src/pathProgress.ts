@@ -1,3 +1,4 @@
+import { defineStorageMutation } from './storageMutations'
 import { getStorageValue, setStorageValue, updateStorageValue } from './storage'
 import type { AverageWindowDays, PathProgress } from './storage'
 import {
@@ -127,66 +128,78 @@ export const getSelectedScrimbaCourse = (
 export const getPathProgress = async (): Promise<PathProgress> =>
   normalizePathProgress(await getStorageValue('pathProgress'))
 
-export const savePathName = (pathName: string): Promise<PathProgress> =>
-  updateStorageValue('pathProgress', (pathProgress) =>
-    normalizePathProgress({
-      ...pathProgress,
-      pathName,
+export const savePathName = defineStorageMutation(
+  'savePathName',
+  (pathName: string): Promise<PathProgress> =>
+    updateStorageValue('pathProgress', (pathProgress) =>
+      normalizePathProgress({
+        ...pathProgress,
+        pathName,
+      }),
+    ),
+)
+
+export const saveTotalEstimatedHours = defineStorageMutation(
+  'saveTotalEstimatedHours',
+  (
+    totalEstimatedHours: number,
+  ): Promise<PathProgress> =>
+    updateStorageValue('pathProgress', (pathProgress) =>
+      normalizePathProgress({
+        ...pathProgress,
+        totalEstimatedHours: normalizeTotalHours(
+          totalEstimatedHours,
+          pathProgress.totalEstimatedHours,
+        ),
+      }),
+    ),
+)
+
+export const saveProgressPercentage = defineStorageMutation(
+  'saveProgressPercentage',
+  (
+    progressPercentage: number,
+  ): Promise<PathProgress> =>
+    updateStorageValue('pathProgress', (pathProgress) =>
+      normalizePathProgress({
+        ...pathProgress,
+        lastProgressSyncAt: null,
+        progressPercentage,
+        progressSource: 'manual',
+      }),
+    ),
+)
+
+export const selectScrimbaCourse = defineStorageMutation(
+  'selectScrimbaCourse',
+  (
+    courseId: string,
+  ): Promise<PathProgress> =>
+    updateStorageValue('pathProgress', (storedPathProgress) => {
+      const pathProgress = normalizePathProgress(storedPathProgress)
+      const course = getSelectableScrimbaCourses(pathProgress).find(
+        (candidate) => candidate.id === courseId,
+      )
+
+      if (!course) {
+        return pathProgress
+      }
+
+      const hasDetectedProgress = course.progressPercentage !== null
+
+      return normalizePathProgress({
+        ...pathProgress,
+        courseUrl: course.url,
+        lastProgressSyncAt: hasDetectedProgress ? course.detectedAt : null,
+        pathName: course.name,
+        progressPercentage: hasDetectedProgress ? course.progressPercentage! : 0,
+        progressSource: hasDetectedProgress ? 'scrimba' : 'manual',
+        selectedCourseId: course.id,
+        totalEstimatedHours:
+          course.totalEstimatedHours ?? pathProgress.totalEstimatedHours,
+      })
     }),
-  )
-
-export const saveTotalEstimatedHours = (
-  totalEstimatedHours: number,
-): Promise<PathProgress> =>
-  updateStorageValue('pathProgress', (pathProgress) =>
-    normalizePathProgress({
-      ...pathProgress,
-      totalEstimatedHours: normalizeTotalHours(
-        totalEstimatedHours,
-        pathProgress.totalEstimatedHours,
-      ),
-    }),
-  )
-
-export const saveProgressPercentage = (
-  progressPercentage: number,
-): Promise<PathProgress> =>
-  updateStorageValue('pathProgress', (pathProgress) =>
-    normalizePathProgress({
-      ...pathProgress,
-      lastProgressSyncAt: null,
-      progressPercentage,
-      progressSource: 'manual',
-    }),
-  )
-
-export const selectScrimbaCourse = (
-  courseId: string,
-): Promise<PathProgress> =>
-  updateStorageValue('pathProgress', (storedPathProgress) => {
-    const pathProgress = normalizePathProgress(storedPathProgress)
-    const course = getSelectableScrimbaCourses(pathProgress).find(
-      (candidate) => candidate.id === courseId,
-    )
-
-    if (!course) {
-      return pathProgress
-    }
-
-    const hasDetectedProgress = course.progressPercentage !== null
-
-    return normalizePathProgress({
-      ...pathProgress,
-      courseUrl: course.url,
-      lastProgressSyncAt: hasDetectedProgress ? course.detectedAt : null,
-      pathName: course.name,
-      progressPercentage: hasDetectedProgress ? course.progressPercentage! : 0,
-      progressSource: hasDetectedProgress ? 'scrimba' : 'manual',
-      selectedCourseId: course.id,
-      totalEstimatedHours:
-        course.totalEstimatedHours ?? pathProgress.totalEstimatedHours,
-    })
-  })
+)
 
 export const recordDetectedScrimbaCourse = (
   detectedCourse: ScrimbaCourseProgress,
@@ -238,15 +251,18 @@ export const recordDetectedScrimbaCourse = (
     })
   })
 
-export const saveAverageWindowDays = (
-  averageWindowDays: AverageWindowDays,
-): Promise<PathProgress> =>
-  updateStorageValue('pathProgress', (pathProgress) =>
-    normalizePathProgress({
-      ...pathProgress,
-      averageWindowDays,
-    }),
-  )
+export const saveAverageWindowDays = defineStorageMutation(
+  'saveAverageWindowDays',
+  (
+    averageWindowDays: AverageWindowDays,
+  ): Promise<PathProgress> =>
+    updateStorageValue('pathProgress', (pathProgress) =>
+      normalizePathProgress({
+        ...pathProgress,
+        averageWindowDays,
+      }),
+    ),
+)
 
 export const ensurePathProgress = async (): Promise<PathProgress> => {
   const pathProgress = await getPathProgress()

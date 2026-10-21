@@ -74,4 +74,91 @@ describe('background storage failure responses', () => {
     }))
     expect(response).toHaveBeenCalledTimes(1)
   })
+
+  const send = (message: unknown): Promise<unknown> =>
+    new Promise((resolve) => { listener(message, {}, resolve) })
+
+  const connectClient = async () => {
+    Object.assign(chrome.runtime, {
+      sendMessage: vi.fn((message, callback) => { listener(message, {}, callback) }),
+    })
+    // A fresh module graph represents the popup/dashboard JS context. The
+    // service worker retains its own host flag and registered implementations.
+    vi.resetModules()
+    return import('./settings')
+  }
+
+  it('preserves both overlapping activity pulses and their session totals', async () => {
+    const pulse = (seconds: number) => ({
+      type: 'scrimba:activity-pulse', sessionId, url, title: null,
+      activeSeconds: seconds, recordedAt: '2026-10-20T12:00:20.000Z',
+    })
+    const responses = await Promise.all([send(pulse(5)), send(pulse(7))])
+    expect(responses).toEqual([
+      expect.objectContaining({ ok: true }), expect.objectContaining({ ok: true }),
+    ])
+    const activities = await new Promise<Record<string, { activeSeconds: number; sessions: { activeSeconds: number }[] }>>((resolve) =>
+      chrome.storage.local.get('dailyActivities', (items) => resolve(items.dailyActivities as never)))
+    const activity = Object.values(activities)[0]
+    expect(activity.activeSeconds).toBe(12)
+    expect(activity.sessions[0].activeSeconds).toBe(12)
+  })
+
+  it('merges settings changes from separate contexts and the floating widget', async () => {
+    const client = await connectClient()
+    await Promise.all([
+      client.saveDailyGoal(2700), client.saveIdleTimeout(300),
+      send({ type: 'storage:mutate', command: 'saveFloatingWidgetVisible', args: [false] }),
+    ])
+    expect(await client.getUserSettings()).toMatchObject({
+      dailyGoalSeconds: 2700, idleTimeoutSeconds: 300, floatingWidgetVisible: false,
+    })
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'storage:mutate', command: 'saveDailyGoal' }), expect.any(Function),
+    )
+  })
+
+  it('continues processing queued mutations after a storage failure', async () => {
+    const client = await connectClient()
+    failNextStorageOperation('set')
+    const results = await Promise.allSettled([client.saveIdleTimeout(300), client.saveDailyGoal(2700)])
+    expect(results[0].status).toBe('rejected')
+    expect(results[1].status).toBe('fulfilled')
+    expect(await client.getUserSettings()).toMatchObject({ dailyGoalSeconds: 2700, idleTimeoutSeconds: 120 })
+  })
+
+  it('orders a reset after an in-flight pulse and before subsequent settings saves', async () => {
+    const client = await connectClient()
+    const storage = await import('./storage')
+    await Promise.all([
+      send({ type: 'scrimba:activity-pulse', sessionId, url, title: null,
+        activeSeconds: 5, recordedAt: '2026-10-20T12:00:05.000Z' }),
+      storage.resetLocalData({ resetSettings: true }),
+      client.saveIdleTimeout(300),
+    ])
+    const exported = await storage.getLocalDataExport()
+    expect(exported.data.dailyActivities).toEqual({})
+    expect(exported.data.currentScrimbaPage).toBeNull()
+    expect(exported.data.streakStatus.currentStreak).toBe(0)
+    expect(exported.data.userSettings.idleTimeoutSeconds).toBe(300)
+  })
+
+
+  it('preserves path edits alongside a detected course', async () => {
+    await connectClient()
+    const client = await import('./pathProgress')
+    await Promise.all([
+      client.savePathName('My learning plan'), client.saveTotalEstimatedHours(90),
+      send({ type: 'scrimba:course-progress-detected', course: {
+        id: 'c0j', name: 'Frontend Developer Path',
+        url: 'https://scrimba.com/frontend-path-c0j', totalEstimatedHours: 81.6,
+        completedItems: 10, totalItems: 100, progressPercentage: 10, detectedAt: startedAt,
+      } }),
+    ])
+    expect(await client.getPathProgress()).toMatchObject({
+      pathName: 'My learning plan', totalEstimatedHours: 90,
+      detectedCourses: { c0j: { progressPercentage: 10 } },
+    })
+  })
+
 })

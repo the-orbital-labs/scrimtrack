@@ -94,28 +94,6 @@ const getStorageValue = <Value>(
     }
   })
 
-const setStorageValue = <Value>(key: string, value: Value): Promise<boolean> =>
-  new Promise((resolve, reject) => {
-    try {
-      if (!isExtensionContextValid()) {
-        throw new Error('Extension unavailable. Reload and try again.')
-      }
-
-      chrome.storage.local.set({ [key]: value }, () => {
-        try {
-          if (chrome.runtime.lastError) {
-            throw new Error(chrome.runtime.lastError.message ?? 'Storage write failed')
-          }
-          resolve(true)
-        } catch (error) {
-          reject(error)
-        }
-      })
-    } catch (error) {
-      reject(error)
-    }
-  })
-
 const getUserSettings = async (): Promise<UserSettings> => ({
   ...defaultUserSettings,
   ...(await getStorageValue<Partial<UserSettings>>('userSettings', {})),
@@ -142,33 +120,27 @@ const getTodayActivity = async (
   }
 }
 
-const saveTrackingEnabled = async (
-  trackingEnabled: boolean,
-): Promise<UserSettings> => {
-  const settings = await getUserSettings()
-  const nextSettings = {
-    ...settings,
-    trackingEnabled,
-  }
+const requestWidgetMutation = <Result>(command: string, value: unknown): Promise<Result> =>
+  new Promise((resolve, reject) => {
+    try {
+      chrome.runtime.sendMessage({ type: 'storage:mutate', command, args: [value] }, (response) => {
+        const result = response as { ok?: boolean; value?: Result } | undefined
+        if (chrome.runtime.lastError || !result?.ok || result.value === undefined) {
+          reject(new Error(chrome.runtime.lastError?.message ?? 'Could not save local data.'))
+        } else {
+          resolve(result.value)
+        }
+      })
+    } catch (error) {
+      reject(error)
+    }
+  })
 
-  await setStorageValue('userSettings', nextSettings)
+const saveTrackingEnabled = (value: boolean): Promise<UserSettings> =>
+  requestWidgetMutation<UserSettings>('saveTrackingEnabled', value)
 
-  return nextSettings
-}
-
-const saveFloatingWidgetVisible = async (
-  floatingWidgetVisible: boolean,
-): Promise<UserSettings> => {
-  const settings = await getUserSettings()
-  const nextSettings = {
-    ...settings,
-    floatingWidgetVisible,
-  }
-
-  await setStorageValue('userSettings', nextSettings)
-
-  return nextSettings
-}
+const saveFloatingWidgetVisible = (value: boolean): Promise<UserSettings> =>
+  requestWidgetMutation<UserSettings>('saveFloatingWidgetVisible', value)
 
 const secondsToMinutes = (seconds: number): number =>
   Math.floor(Math.max(0, seconds) / 60)
@@ -1742,7 +1714,7 @@ if (
     }
 
     expandedWidgetPosition = position
-    void setStorageValue<WidgetPosition>(widgetPositionStorageKey, position).catch(reportStorageError)
+    void requestWidgetMutation<boolean>('saveWidgetPosition', position).catch(reportStorageError)
   }
 
   if (widget) {

@@ -1,3 +1,4 @@
+import { enableStorageHost } from '../storageMutations'
 import { vi } from 'vitest'
 import type { StorageSchema } from '../storage'
 
@@ -62,6 +63,7 @@ const createDefaultStorage = (): StorageSchema => ({
 export const installChromeMock = (
   overrides: Partial<StorageSchema> = {},
 ): ChromeMock => {
+  enableStorageHost()
   const data: StorageSchema = {
     ...createDefaultStorage(),
     ...clone(overrides),

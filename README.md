@@ -127,6 +127,13 @@ Then open `chrome://extensions` in Chrome, enable **Developer mode**, choose
 Run `npm run build` again after making changes, then reload the extension from
 `chrome://extensions`.
 
+Storage mutations run in one queue in the background service worker. Register
+new UI mutations with `defineStorageMutation` in `src/storageMutations.ts` and
+import their module from the background worker so its handler is registered.
+Keep each operation's reads and writes inside the mutation, and await every
+write before it completes. Content scripts send mutation commands through
+`chrome.runtime.sendMessage`; reads can still use `chrome.storage.local` directly.
+
 ## Disclaimer
 
 ScrimTrack is an unofficial project and is not affiliated with, endorsed by, or sponsored by Scrimba.
