@@ -137,6 +137,24 @@ describe('background storage failure responses', () => {
     expect(exported.data.userSettings.idleTimeoutSeconds).toBe(300)
   })
 
+  it('serializes replacement imports with tracking, settings and coherent exports', async () => {
+    const client = await connectClient()
+    const storage = await import('./storage')
+    const backup = await storage.getLocalDataExport()
+    await Promise.all([
+      send(update('pulse', 2, startedAt, '2026-10-20T12:00:05.000Z')),
+      storage.importLocalData(JSON.stringify(backup)),
+      client.saveIdleTimeout(300),
+    ])
+    const exported = await storage.getLocalDataExport()
+    expect(exported.data.dailyActivities).toEqual({})
+    expect(exported.data.currentScrimbaPage).toBeNull()
+    expect(exported.data.trackingState.epoch).not.toBe(backup.data.trackingState.epoch)
+    expect(exported.data.userSettings.idleTimeoutSeconds).toBe(300)
+    expect(await send(update('pulse', 3, startedAt, '2026-10-20T12:00:10.000Z')))
+      .toMatchObject({ error: 'tracking-reset' })
+  })
+
 
   it('preserves path edits alongside a detected course', async () => {
     await connectClient()
@@ -155,4 +173,54 @@ describe('background storage failure responses', () => {
     })
   })
 
+})
+
+describe('background migration barrier', () => {
+  let listener: MessageListener
+  let store: ReturnType<typeof installChromeMock>
+  beforeEach(() => {
+    vi.resetModules()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    store = installChromeMock()
+    Reflect.deleteProperty(store.data, 'storageVersion')
+    store.data.userSettings.dailyGoalSeconds = 900
+    Object.assign(chrome.runtime, {
+      onInstalled: { addListener: vi.fn() }, onStartup: { addListener: vi.fn() },
+      onMessage: { addListener: (callback: MessageListener) => { listener = callback } },
+    })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); uninstallChromeMock() })
+
+  const save = (reply: (value: unknown) => void) => listener({
+    type: 'storage:mutate', command: 'saveIdleTimeout', args: [300],
+  }, {}, reply)
+
+  it('holds incoming mutations until the migration snapshot is persisted', async () => {
+    const originalSet = vi.mocked(chrome.storage.local.set).getMockImplementation()!
+    let finish: (() => void) | undefined
+    vi.mocked(chrome.storage.local.set).mockImplementationOnce((values, callback) => {
+      finish = () => originalSet(values, callback)
+    })
+    await import('./background')
+    const reply = vi.fn()
+    save(reply)
+    await vi.waitFor(() => expect(finish).toBeDefined())
+    expect(reply).not.toHaveBeenCalled()
+    expect(store.data.userSettings.idleTimeoutSeconds).toBe(120)
+    finish!()
+    await vi.waitFor(() => expect(reply).toHaveBeenCalledWith(expect.objectContaining({ ok: true })))
+    expect(store.data).toMatchObject({ storageVersion: 3, userSettings: { dailyGoalSeconds: 900, idleTimeoutSeconds: 300 } })
+  })
+
+  it('retries a failed migration before allowing the next requested mutation', async () => {
+    failNextStorageOperation('set')
+    await import('./background')
+    await vi.waitFor(() => expect(console.warn).toHaveBeenCalled())
+    expect(store.data.storageVersion).toBeUndefined()
+    const reply = vi.fn()
+    save(reply)
+    await vi.waitFor(() => expect(reply).toHaveBeenCalledWith(expect.objectContaining({ ok: true })))
+    expect(store.data).toMatchObject({ storageVersion: 3, userSettings: { dailyGoalSeconds: 900, idleTimeoutSeconds: 300 } })
+  })
 })

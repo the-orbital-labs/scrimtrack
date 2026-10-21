@@ -25,7 +25,7 @@ ScrimTrack helps you understand your Scrimba learning habits without accounts, s
 * Lets you set a daily learning goal
 * Lets you select a Scrimba path or discovered course, sync visible progress,
   and estimate a finish date
-* Exports local data as JSON and supports local reset controls
+* Exports and imports local data as JSON and supports local reset controls
 
 ## Screenshots
 
@@ -132,7 +132,37 @@ new UI mutations with `defineStorageMutation` in `src/storageMutations.ts` and
 import their module from the background worker so its handler is registered.
 Keep each operation's reads and writes inside the mutation, and await every
 write before it completes. Content scripts send mutation commands through
-`chrome.runtime.sendMessage`; reads can still use `chrome.storage.local` directly.
+`chrome.runtime.sendMessage`. UI reads use the validated `getStorageValue` helper;
+content scripts request validated reads from the worker to keep their classic
+script bundle self-contained and wait for migration.
+
+Storage and exports now use version 3. Before processing queued work on every
+worker boot, the worker validates a complete snapshot and migrates unversioned
+data and older additive formats in one write. Missing legacy settings/path
+fields receive defaults; existing history dates and totals are preserved.
+Malformed values and unsupported future versions fail visibly without being
+overwritten. A failed migration can retry; its version advances only after the
+whole snapshot is saved. Unknown local keys, such as widget position and pending
+tracking entries, are left alone.
+
+The dashboard and popup accept JSON exports up to 10 MB, including version 1
+(`scrimba-learning-tracker`) and version 2 (`scrimtrack`) exports. Imports validate
+dates, timezones, numeric ranges, session records, Scrimba URLs, and nested data
+before showing a preview, then validate again in the worker before saving.
+Malformed files, incomplete data, unsafe object keys, and future versions are
+rejected. Export reads one snapshot through the same queue as mutations.
+
+**Import replaces history, app settings, and path settings; it never merges.**
+Download an export first to retain a backup, select a file, review the summary,
+and choose **Replace local data with import** (or cancel without changing data).
+Replacement commits in one write, so a failed save leaves existing data intact.
+Re-importing the same file does not add its time twice. Goal completion and
+streaks are recalculated, imported sessions become inactive, and current-page
+state and tracking receipts are cleared under a fresh tracking generation.
+Installation metadata and widget position stay with this device. Old pending
+tracking messages cannot restore replaced history; fresh input starts tracking
+again. Imported calendar dates retain their original meaning even when the
+imported timezone differs from this device's timezone.
 
 Tracking uses immutable `tracking-outbox:<session>:<sequence>` entries in local
 storage. Each content script writes only its own entries, before requesting
@@ -141,7 +171,7 @@ removal. This is the only exception to the shared-data single-writer rule.
 The worker saves the receipt, daily/session totals, streak, and current-page
 state in one storage operation before acknowledging an update. Retries keep the
 same sequence and interval, and persisted receipts suppress duplicates after
-lost replies or worker restarts. Receipts are retained until a data reset.
+lost replies or worker restarts. Receipts are retained until a data reset or import.
 
 Pending entries replay when the worker starts or receives an outbox change.
 Open pages retry interrupted requests with a three-second acknowledgement

@@ -3,10 +3,22 @@ import { recalculateStreakStatus } from './activity'
 import { ensurePathProgress, recordDetectedScrimbaCourse } from './pathProgress'
 import { isScrimbaCourseProgress } from './scrimbaCourse'
 import { ensureUserSettings } from './settings'
-import { updateStorageValue } from './storage'
+import { ensureStorageMigrated, updateStorageValue } from './storage'
 import { deliverTrackingUpdate, isTrackingUpdate, replayTrackingOutbox, trackingOutboxPrefix } from './tracking'
 
 enableStorageHost()
+
+// Every worker boot and queued operation must pass migration before touching
+// history. Retry after a failed initialization without allowing later writes.
+let storageReady = false
+const ensureReady = async () => {
+  if (!storageReady) {
+    await ensureStorageMigrated()
+    storageReady = true
+  }
+}
+const enqueueReady = <Result>(operation: () => Promise<Result>) =>
+  enqueueStorageMutation(async () => { await ensureReady(); return operation() })
 
 // Position is an absolute value, but still goes through the single writer.
 defineStorageMutation('saveWidgetPosition', async (position: { x: number; y: number }) => {
@@ -30,7 +42,7 @@ const startupSnapshot = () => ({
 })
 
 chrome.runtime.onInstalled.addListener(() => {
-  void enqueueStorageMutation(() => settleStorageWrites([
+  void enqueueReady(() => settleStorageWrites([
     updateStorageValue('extensionStatus', (extensionStatus) => ({
       ...extensionStatus,
       installedAt: new Date().toISOString(),
@@ -47,7 +59,7 @@ chrome.runtime.onInstalled.addListener(() => {
 })
 
 chrome.runtime.onStartup.addListener(() => {
-  void enqueueStorageMutation(() => settleStorageWrites([
+  void enqueueReady(() => settleStorageWrites([
     updateStorageValue('extensionStatus', (extensionStatus) => ({
       ...extensionStatus,
       ...startupSnapshot(),
@@ -63,7 +75,7 @@ chrome.runtime.onStartup.addListener(() => {
 // Register synchronously so storage changes wake a suspended MV3 worker. The
 // outbox also survives a tab closing before its runtime message is delivered.
 let replayTimer: ReturnType<typeof setTimeout> | undefined
-const replay = () => enqueueStorageMutation(replayTrackingOutbox).catch((error: unknown) => {
+const replay = () => enqueueReady(replayTrackingOutbox).catch((error: unknown) => {
   console.warn('ScrimTrack could not replay pending tracking data:', error)
   clearTimeout(replayTimer)
   replayTimer = setTimeout(() => { void replay() }, 5_000)
@@ -85,7 +97,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     isScrimbaCourseProgress(candidate.course) ? candidate.course : null
   if (!isMutation && !isTracking && !course) return
 
-  void enqueueStorageMutation(async () => {
+  void enqueueReady(async () => {
     if (isMutation) {
       if (typeof candidate.command !== 'string' || !Array.isArray(candidate.args)) {
         throw new Error('Invalid storage mutation.')
@@ -104,7 +116,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
   }).catch((error: unknown) => {
     console.warn('ScrimTrack could not save local data:', error)
-    try { sendResponse({ ok: false, error: 'storage-failure' }) } catch { /* Disconnected tab. */ }
+    try { sendResponse({ ok: false, error: isMutation && error instanceof Error ? error.message : 'storage-failure' }) } catch { /* Disconnected tab. */ }
   })
   return true
 })

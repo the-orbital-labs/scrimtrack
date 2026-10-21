@@ -1,6 +1,9 @@
 import { assertStorageHost, defineStorageMutation } from './storageMutations'
 import type { ScrimbaCourseProgress } from './scrimbaCourse'
 import type { TrackingState } from './trackingProtocol'
+import { DataValidationError, storageVersion, validateStorageValue, validateVersion } from './storageValidation'
+import { getDateKey } from './calendar'
+import { calculateStreakStatus } from './streak'
 
 export type ExtensionStatus = {
   installedAt: string | null
@@ -68,6 +71,7 @@ export type PathProgress = {
 }
 
 export type StorageSchema = {
+  storageVersion: typeof storageVersion
   trackingState: TrackingState
   extensionStatus: ExtensionStatus
   currentScrimbaPage: CurrentScrimbaPage
@@ -87,10 +91,11 @@ export type LocalDataExport = {
   app: 'scrimtrack'
   data: StorageSchema
   exportedAt: string
-  schemaVersion: 2
+  schemaVersion: typeof storageVersion
 }
 
 const defaultStorageValues: StorageSchema = {
+  storageVersion,
   trackingState: { epoch: 'initial', sessions: {} },
   extensionStatus: {
     installedAt: null,
@@ -138,7 +143,7 @@ const getDefaultStorageValue = <Key extends StorageKey>(
 
 const withDefaultStorageValue = <Key extends StorageKey>(
   key: Key,
-  value: StorageSchema[Key] | undefined,
+  value: unknown,
 ): StorageSchema[Key] => {
   const defaultValue = getDefaultStorageValue(key)
 
@@ -154,12 +159,15 @@ const withDefaultStorageValue = <Key extends StorageKey>(
     !Array.isArray(value) &&
     !Array.isArray(defaultValue)
   ) {
-    return {
+    const merged = {
       ...defaultValue,
       ...value,
     }
+    validateStorageValue(key, merged)
+    return merged
   }
 
+  validateStorageValue(key, value)
   return value
 }
 
@@ -196,14 +204,19 @@ export const getStorageValue = <Key extends StorageKey>(
         throw new Error('Extension unavailable. Reload the page and try again.')
       }
 
-      chrome.storage.local.get(key, (items) => {
+      chrome.storage.local.get([key, 'storageVersion'], (items) => {
         try {
           if (chrome.runtime.lastError) {
             throw new Error(chrome.runtime.lastError.message ?? 'Storage read failed')
           }
 
-          const value = items[key] as StorageSchema[Key] | undefined
-          resolve(withDefaultStorageValue(key, value))
+          validateVersion(items.storageVersion)
+          if (items.storageVersion === storageVersion && items[key] !== undefined) {
+            validateStorageValue(key, items[key])
+            resolve(items[key])
+          } else {
+            resolve(withDefaultStorageValue(key, items[key]))
+          }
         } catch (error) {
           reject(new StorageError('read', key, error))
         }
@@ -224,6 +237,7 @@ export const setStorageValues = (values: Partial<StorageSchema>): Promise<boolea
   new Promise((resolve, reject) => {
     try {
       assertStorageHost()
+      for (const key of Object.keys(values) as StorageKey[]) validateStorageValue(key, values[key])
       if (!isExtensionContextValid()) {
         throw new Error('Extension unavailable. Reload the page and try again.')
       }
@@ -268,6 +282,7 @@ export const resetLocalData = defineStorageMutation(
       : await getStorageValue('pathProgress')
 
     const nextStorage: StorageSchema = {
+      storageVersion,
       trackingState: { epoch: crypto.randomUUID(), sessions: {} },
       extensionStatus: await getStorageValue('extensionStatus'),
       currentScrimbaPage: getDefaultStorageValue('currentScrimbaPage'),
@@ -283,35 +298,112 @@ export const resetLocalData = defineStorageMutation(
   },
 )
 
-export const getLocalDataExport = async (): Promise<LocalDataExport> => {
-  const [
-    extensionStatus,
-    currentScrimbaPage,
-    dailyActivities,
-    streakStatus,
-    userSettings,
-    pathProgress,
-  ] = await Promise.all([
-    getStorageValue('extensionStatus'),
-    getStorageValue('currentScrimbaPage'),
-    getStorageValue('dailyActivities'),
-    getStorageValue('streakStatus'),
-    getStorageValue('userSettings'),
-    getStorageValue('pathProgress'),
-  ])
+// Read one snapshot so an export cannot mix values from different commits.
+const readStorageSnapshot = (): Promise<Record<string, unknown>> => new Promise((resolve, reject) => {
+  try {
+    if (!isExtensionContextValid()) throw new Error('Extension unavailable. Reload the page and try again.')
+    chrome.storage.local.get(null, (items) => {
+      if (chrome.runtime.lastError) reject(new StorageError('read', 'storageVersion', chrome.runtime.lastError))
+      else resolve(items)
+    })
+  } catch (error) { reject(new StorageError('read', 'storageVersion', error)) }
+})
 
-  return {
-    app: 'scrimtrack',
-    data: {
-      trackingState: await getStorageValue('trackingState'),
-      extensionStatus,
-      currentScrimbaPage,
-      dailyActivities,
-      streakStatus,
-      userSettings,
-      pathProgress,
-    },
-    exportedAt: new Date().toISOString(),
-    schemaVersion: 2,
-  }
+// Versions 0 (unversioned), 1 and 2 used the same activity/session shape.
+// Their additive settings/path fields and tracking ledger were introduced over
+// time. Fill only missing fields; malformed present values must still fail.
+export const migrateStorageSnapshot = (raw: Record<string, unknown>): StorageSchema => {
+  validateVersion(raw.storageVersion)
+  const legacy = raw.storageVersion !== storageVersion
+  const migrated = Object.fromEntries((Object.keys(defaultStorageValues) as StorageKey[]).map((key) => {
+    if (key === 'storageVersion') return [key, storageVersion]
+    const value = legacy ? withDefaultStorageValue(key, raw[key]) : raw[key]
+    validateStorageValue(key, value)
+    return [key, value]
+  })) as StorageSchema
+  return migrated
 }
+
+export const ensureStorageMigrated = async (): Promise<void> => {
+  const raw = await readStorageSnapshot()
+  const migrated = migrateStorageSnapshot(raw)
+  if (raw.storageVersion !== storageVersion) await setStorageValues(migrated)
+}
+
+// Content scripts stay classic, self-contained scripts. Route their reads
+// through the worker rather than bundling the dashboard's storage modules.
+defineStorageMutation('readStorageValue', async (key: StorageKey) => {
+  if (!Object.hasOwn(defaultStorageValues, key)) throw new DataValidationError('storage key')
+  return getStorageValue(key)
+})
+
+export const getLocalDataExport = defineStorageMutation('getLocalDataExport', async (): Promise<LocalDataExport> => ({
+  app: 'scrimtrack',
+  data: migrateStorageSnapshot(await readStorageSnapshot()),
+  exportedAt: new Date().toISOString(),
+  schemaVersion: storageVersion,
+}))
+
+export const maxImportBytes = 10 * 1024 * 1024
+
+export const parseLocalDataImport = (json: string): StorageSchema => {
+  if (typeof json !== 'string' || new TextEncoder().encode(json).length > maxImportBytes) {
+    throw new Error('Import must be a JSON export smaller than 10 MB. No data was changed.')
+  }
+  let file: unknown
+  try {
+    file = JSON.parse(json, (key, value: unknown) => {
+      if (['__proto__', 'prototype', 'constructor'].includes(key)) throw new Error('Unsafe key')
+      return value
+    })
+  } catch { throw new Error('This file is not valid ScrimTrack JSON. No data was changed.') }
+  if (!file || typeof file !== 'object' || Array.isArray(file)) throw new DataValidationError('export')
+  const envelope = file as Record<string, unknown>
+  if (![1, 2, storageVersion].includes(envelope.schemaVersion as number) ||
+    !(envelope.app === 'scrimtrack' || (envelope.schemaVersion === 1 && envelope.app === 'scrimba-learning-tracker'))) {
+    throw new Error('Unsupported ScrimTrack export or version. No data was changed.')
+  }
+  if (typeof envelope.exportedAt !== 'string' || !Number.isFinite(Date.parse(envelope.exportedAt)) ||
+    !envelope.data || typeof envelope.data !== 'object' || Array.isArray(envelope.data)) throw new DataValidationError('export')
+  const raw = envelope.data as Record<string, unknown>
+  // An export must contain the user's durable data. A random/incomplete object
+  // must never become a valid empty replacement through migration defaults.
+  for (const key of ['dailyActivities', 'userSettings', 'pathProgress']) {
+    if (!Object.hasOwn(raw, key)) throw new DataValidationError(`export.data.${key}`)
+  }
+  if (envelope.schemaVersion !== storageVersion) {
+    for (const [key, fields] of Object.entries({
+      userSettings: ['dailyGoalSeconds', 'idleTimeoutSeconds', 'trackingEnabled', 'timezone'],
+      pathProgress: ['pathName', 'totalEstimatedHours', 'progressPercentage', 'averageWindowDays'],
+    })) {
+      const value = raw[key]
+      if (!value || typeof value !== 'object' || fields.some((field) => !Object.hasOwn(value, field))) throw new DataValidationError(key)
+    }
+  }
+  if (envelope.schemaVersion === storageVersion && raw.storageVersion !== storageVersion) throw new DataValidationError('storageVersion')
+  if (envelope.schemaVersion !== storageVersion && raw.storageVersion !== undefined) throw new DataValidationError('storageVersion')
+  return migrateStorageSnapshot(raw)
+}
+
+// Replace, never merge: re-importing the same file cannot double history.
+// The worker validates again rather than trusting a preview in another context.
+export const importLocalData = defineStorageMutation('importLocalData', async (json: string): Promise<StorageSchema> => {
+  const imported = parseLocalDataImport(json)
+  const now = new Date().toISOString()
+  const activities = Object.fromEntries(Object.entries(imported.dailyActivities).map(([key, day]) => [key, {
+    ...day,
+    goalCompleted: day.goalSeconds > 0 && day.activeSeconds >= day.goalSeconds,
+    sessions: day.sessions.map((session) => ({ ...session, isActive: false,
+      endedAt: session.endedAt ?? (session.startedAt > now ? session.startedAt : now) })),
+  }]))
+  const next: StorageSchema = {
+    ...imported,
+    extensionStatus: await getStorageValue('extensionStatus'),
+    trackingState: { epoch: crypto.randomUUID(), sessions: {} },
+    currentScrimbaPage: null,
+    dailyActivities: activities,
+    streakStatus: calculateStreakStatus(activities, getDateKey(now, imported.userSettings.timezone)),
+  }
+  await setStorageValues(next)
+  return next
+})

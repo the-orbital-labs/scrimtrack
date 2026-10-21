@@ -28,6 +28,7 @@ const clone = <Value>(value: Value): Value =>
   value === undefined ? value : JSON.parse(JSON.stringify(value)) as Value
 
 const createDefaultStorage = (): StorageSchema => ({
+  storageVersion: 3,
   trackingState: { epoch: 'initial', sessions: {} },
   extensionStatus: {
     installedAt: null,

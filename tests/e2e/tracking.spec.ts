@@ -1,5 +1,5 @@
 import type { Worker } from '@playwright/test'
-import type { CurrentScrimbaPage, DailyActivity } from '../../src/storage'
+import type { CurrentScrimbaPage, DailyActivity, LocalDataExport } from '../../src/storage'
 import type { TrackingState, TrackingUpdate } from '../../src/trackingProtocol'
 import { expect, getExtensionStorage, seedExtensionStorage, test } from './fixtures'
 
@@ -177,44 +177,61 @@ test('recovers a lost content-script reply without duplicating the persisted int
   await expect(lesson.locator('#scrimtrack-page-widget').getByText('Saving delayed. Retrying local data...', { exact: true })).toHaveCount(0)
 })
 
-test('reset during tracking invalidates old retries and allows a fresh session', async ({
-  extensionContext, extensionServiceWorker, extensionId,
-}) => {
-  const lesson = await extensionContext.newPage()
-  await lesson.goto('https://scrimba.com/reset-lesson')
-  await lesson.bringToFront()
-  const editor = lesson.getByRole('textbox', { name: 'Code editor' })
-  await editor.pressSequentially('first')
-  await expect.poll(() => countedSeconds(extensionServiceWorker), { timeout: 12_000 }).toBeGreaterThanOrEqual(5)
-  const old = await getExtensionStorage(extensionServiceWorker, ['trackingState', 'currentScrimbaPage'])
-  const state = old.trackingState as TrackingState
-  const sessionId = (old.currentScrimbaPage as NonNullable<CurrentScrimbaPage>).sessionId
-  const record = state.sessions[sessionId]
-  const stale: TrackingUpdate = {
-    type: 'scrimba:tracking-update', epoch: state.epoch, sessionId, sequence: record.sequence,
-    kind: 'pulse', from: record.startedAt, at: record.accountedAt,
-    url: lesson.url(), title: null, isMediaPlaying: false,
-  }
-  const dashboard = await extensionContext.newPage()
-  await dashboard.goto(`chrome-extension://${extensionId}/dashboard.html`)
-  dashboard.once('dialog', (dialog) => dialog.accept())
-  await dashboard.getByRole('button', { name: 'Reset activity only' }).click()
-  await expect(dashboard.getByText('Activity data, sessions, and streaks were reset. Settings were kept.')).toBeVisible()
-  expect(await countedSeconds(extensionServiceWorker)).toBe(0)
-  // Replay a durable old message after reset, as if it arrived from an
-  // interrupted tab or a service worker that restarted at the reset boundary.
-  await extensionServiceWorker.evaluate(async (message) => {
-    await new Promise<void>((resolve) => chrome.storage.local.set({
-      [`tracking-outbox:${message.sessionId}:${message.sequence}`]: message,
-    }, resolve))
-  }, stale)
-  await dashboard.waitForTimeout(6_000)
-  expect(await countedSeconds(extensionServiceWorker)).toBe(0)
-  expect((await getExtensionStorage(extensionServiceWorker, 'currentScrimbaPage')).currentScrimbaPage).toBeNull()
-  await lesson.bringToFront()
-  await editor.pressSequentially(' fresh')
-  await expect.poll(() => countedSeconds(extensionServiceWorker), { timeout: 12_000 }).toBeGreaterThanOrEqual(5)
-  const next = await getExtensionStorage(extensionServiceWorker, 'trackingState')
-  expect((next.trackingState as TrackingState).epoch).not.toBe(state.epoch)
-  expect(Object.keys((next.trackingState as TrackingState).sessions)).not.toContain(sessionId)
-})
+for (const operation of ['reset', 'import'] as const) {
+  test(`${operation} during tracking invalidates old retries and allows a fresh session`, async ({
+    extensionContext, extensionServiceWorker, extensionId,
+  }) => {
+    const lesson = await extensionContext.newPage()
+    await lesson.goto('https://scrimba.com/reset-lesson')
+    await lesson.bringToFront()
+    const editor = lesson.getByRole('textbox', { name: 'Code editor' })
+    await editor.pressSequentially('first')
+    await expect.poll(() => countedSeconds(extensionServiceWorker), { timeout: 12_000 }).toBeGreaterThanOrEqual(5)
+    const old = await getExtensionStorage(extensionServiceWorker, ['trackingState', 'currentScrimbaPage'])
+    const state = old.trackingState as TrackingState
+    const sessionId = (old.currentScrimbaPage as NonNullable<CurrentScrimbaPage>).sessionId
+    const record = state.sessions[sessionId]
+    const stale: TrackingUpdate = {
+      type: 'scrimba:tracking-update', epoch: state.epoch, sessionId, sequence: record.sequence,
+      kind: 'pulse', from: record.startedAt, at: record.accountedAt,
+      url: lesson.url(), title: null, isMediaPlaying: false,
+    }
+    const dashboard = await extensionContext.newPage()
+    await dashboard.goto(`chrome-extension://${extensionId}/dashboard.html`)
+    if (operation === 'reset') {
+      dashboard.once('dialog', (dialog) => dialog.accept())
+      await dashboard.getByRole('button', { name: 'Reset activity only' }).click()
+      await expect(dashboard.getByText('Activity data, sessions, and streaks were reset. Settings were kept.')).toBeVisible()
+    } else {
+      const response = await dashboard.evaluate(() => new Promise<{ ok: boolean; value: LocalDataExport }>((resolve) => {
+        chrome.runtime.sendMessage({ type: 'storage:mutate', command: 'getLocalDataExport', args: [] },
+          (result) => resolve(result as { ok: boolean; value: LocalDataExport }))
+      }))
+      expect(response.ok).toBe(true)
+      response.value.data.dailyActivities = {}
+      await dashboard.getByLabel('Import JSON export').setInputFiles({
+        name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(response.value)),
+      })
+      await dashboard.getByRole('button', { name: 'Replace local data with import' }).click()
+      await expect(dashboard.getByText(/Import complete/)).toBeVisible()
+    }
+    expect(await countedSeconds(extensionServiceWorker)).toBe(0)
+    // Replay a durable old message after reset, as if it arrived from an
+    // interrupted tab or a service worker that restarted at the reset boundary.
+    await extensionServiceWorker.evaluate(async (message) => {
+      await new Promise<void>((resolve) => chrome.storage.local.set({
+        [`tracking-outbox:${message.sessionId}:${message.sequence}`]: message,
+      }, resolve))
+    }, stale)
+    await dashboard.waitForTimeout(6_000)
+    expect(await countedSeconds(extensionServiceWorker)).toBe(0)
+    expect((await getExtensionStorage(extensionServiceWorker, 'currentScrimbaPage')).currentScrimbaPage).toBeNull()
+    await lesson.bringToFront()
+    await editor.pressSequentially(' fresh')
+    await expect.poll(() => countedSeconds(extensionServiceWorker), { timeout: 12_000 }).toBeGreaterThanOrEqual(5)
+    const next = await getExtensionStorage(extensionServiceWorker, 'trackingState')
+    expect((next.trackingState as TrackingState).epoch).not.toBe(state.epoch)
+    expect(Object.keys((next.trackingState as TrackingState).sessions)).not.toContain(sessionId)
+  })
+
+}

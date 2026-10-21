@@ -10,7 +10,7 @@ import {
 
 describe('widget storage feedback', () => {
   let store: ReturnType<typeof installChromeMock>
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules()
     store = installChromeMock()
     vi.spyOn(document, 'hasFocus').mockReturnValue(false)
@@ -19,8 +19,16 @@ describe('widget storage feedback', () => {
       if (keys === 'widgetPosition') callback({})
       else originalGet(keys, callback)
     })
+    const { getStorageValue } = await import('./storage')
     Object.assign(chrome.runtime, {
-      sendMessage: vi.fn((_, callback) => callback?.({ ok: true })),
+      sendMessage: vi.fn((message, callback) => {
+        if (message.command === 'readStorageValue') {
+          void getStorageValue(message.args[0]).then(
+            (value) => callback?.({ ok: true, value }),
+            () => callback?.({ ok: false, error: 'storage-failure' }),
+          )
+        } else callback?.({ ok: true })
+      }),
     })
   })
 
