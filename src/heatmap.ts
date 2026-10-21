@@ -1,4 +1,5 @@
-import { createDailyActivity, getLocalDateKey } from './activity'
+import { addCalendarDays, getDateKey, weekStartKey } from './calendar'
+import { createDailyActivity } from './activity'
 import { getUserSettings } from './settings'
 import { getStorageValue } from './storage'
 import type { DailyActivity } from './storage'
@@ -32,40 +33,12 @@ type HeatmapGridOptions = {
   days: number
   endDate?: Date | string
   goalSeconds?: number
+  timezone?: string
   weekStartsOn?: 0 | 1 | 2 | 3 | 4 | 5 | 6
 }
 
 const popupHeatmapWeeks = 12
 const dashboardHeatmapDays = 365
-
-const parseLocalDateKey = (dateKey: string): Date => {
-  const [year, month, day] = dateKey.split('-').map(Number)
-
-  return new Date(year, month - 1, day)
-}
-
-const toLocalDate = (value: Date | string): Date =>
-  typeof value === 'string' ? parseLocalDateKey(value) : value
-
-const addLocalDays = (value: Date, days: number): Date =>
-  new Date(value.getFullYear(), value.getMonth(), value.getDate() + days)
-
-const startOfLocalWeek = (
-  value: Date,
-  weekStartsOn: NonNullable<HeatmapGridOptions['weekStartsOn']>,
-): Date => {
-  const dayOffset = (value.getDay() - weekStartsOn + 7) % 7
-
-  return addLocalDays(value, -dayOffset)
-}
-
-const endOfLocalWeek = (
-  value: Date,
-  weekStartsOn: NonNullable<HeatmapGridOptions['weekStartsOn']>,
-): Date => addLocalDays(startOfLocalWeek(value, weekStartsOn), 6)
-
-const isSameLocalDate = (left: Date, right: Date): boolean =>
-  getLocalDateKey(left) === getLocalDateKey(right)
 
 export const getHeatmapIntensity = (
   activeSeconds: number,
@@ -100,23 +73,23 @@ export const generateHeatmapGrid = (
   {
     days,
     endDate = new Date(),
+    timezone,
     goalSeconds = 0,
     weekStartsOn = 0,
   }: HeatmapGridOptions,
 ): HeatmapGrid => {
-  const today = new Date()
-  const rangeEnd = toLocalDate(endDate)
-  const rangeStart = addLocalDays(rangeEnd, -(Math.max(1, days) - 1))
-  const gridStart = startOfLocalWeek(rangeStart, weekStartsOn)
-  const gridEnd = endOfLocalWeek(rangeEnd, weekStartsOn)
+  const today = getDateKey(new Date(), timezone)
+  const rangeEnd = typeof endDate === 'string' ? endDate : getDateKey(endDate, timezone)
+  const rangeStart = addCalendarDays(rangeEnd, -(Math.max(1, days) - 1))
+  const gridStart = weekStartKey(rangeStart, weekStartsOn)
+  const gridEnd = addCalendarDays(weekStartKey(rangeEnd, weekStartsOn), 6)
   const weeks: HeatmapWeek[] = []
 
-  for (let weekStart = gridStart; weekStart <= gridEnd; weekStart = addLocalDays(weekStart, 7)) {
+  for (let weekStart = gridStart; weekStart <= gridEnd; weekStart = addCalendarDays(weekStart, 7)) {
     const weekDays: HeatmapDay[] = []
 
     for (let offset = 0; offset < 7; offset += 1) {
-      const date = addLocalDays(weekStart, offset)
-      const dateKey = getLocalDateKey(date)
+      const dateKey = addCalendarDays(weekStart, offset)
       const activity = activities[dateKey] ?? createDailyActivity(dateKey, goalSeconds)
       const activeMinutes = Math.floor(activity.activeSeconds / 60)
 
@@ -127,21 +100,21 @@ export const generateHeatmapGrid = (
         activeSeconds: activity.activeSeconds,
         goalCompleted: activity.goalCompleted,
         intensity: getHeatmapIntensity(activity.activeSeconds),
-        isFuture: date > today && !isSameLocalDate(date, today),
-        isOutsideRange: date < rangeStart || date > rangeEnd,
-        isToday: isSameLocalDate(date, today),
+        isFuture: dateKey > today,
+        isOutsideRange: dateKey < rangeStart || dateKey > rangeEnd,
+        isToday: dateKey === today,
       })
     }
 
     weeks.push({
-      startDate: getLocalDateKey(weekStart),
+      startDate: weekStart,
       days: weekDays,
     })
   }
 
   return {
-    startDate: getLocalDateKey(rangeStart),
-    endDate: getLocalDateKey(rangeEnd),
+    startDate: rangeStart,
+    endDate: rangeEnd,
     weeks,
   }
 }
@@ -154,8 +127,9 @@ export const getPopupHeatmapGrid = async (): Promise<HeatmapGrid> => {
 
   return generateHeatmapGrid(activities, {
     days: popupHeatmapWeeks * 7,
-    endDate: endOfLocalWeek(new Date(), 0),
+    endDate: addCalendarDays(weekStartKey(getDateKey(new Date(), settings.timezone)), 6),
     goalSeconds: settings.dailyGoalSeconds,
+    timezone: settings.timezone,
   })
 }
 
@@ -168,5 +142,6 @@ export const getDashboardHeatmapGrid = async (): Promise<HeatmapGrid> => {
   return generateHeatmapGrid(activities, {
     days: dashboardHeatmapDays,
     goalSeconds: settings.dailyGoalSeconds,
+    timezone: settings.timezone,
   })
 }

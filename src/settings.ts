@@ -1,3 +1,4 @@
+import { getDateKey } from './calendar'
 import { defineStorageMutation, settleStorageWrites } from './storageMutations'
 import { getStorageValue, setStorageValue, updateStorageValue } from './storage'
 import type { CurrentScrimbaPage, UserSettings } from './storage'
@@ -7,13 +8,6 @@ const maxDailyGoalSeconds = 24 * 60 * 60
 
 const toNonNegativeSeconds = (value: number): number =>
   Math.max(0, Math.floor(value))
-
-const getLocalDateKey = (value: Date = new Date()): string =>
-  [
-    value.getFullYear(),
-    String(value.getMonth() + 1).padStart(2, '0'),
-    String(value.getDate()).padStart(2, '0'),
-  ].join('-')
 
 const normalizeDailyGoalSeconds = (value: number): number => {
   const seconds = Math.floor(value)
@@ -101,7 +95,7 @@ export const saveDailyGoal = defineStorageMutation(
       ...currentSettings,
       dailyGoalSeconds: normalizedDailyGoalSeconds,
     }))
-    const today = getLocalDateKey()
+    const today = getDateKey(new Date(), settings.timezone)
 
     const activities = await updateStorageValue('dailyActivities', (currentActivities) => {
       const activity = currentActivities[today] ?? {

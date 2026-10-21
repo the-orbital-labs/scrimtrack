@@ -1,7 +1,8 @@
-import { getActivityForDateRange, getLocalDateKey } from './activity'
+import { getActivityForDateRange } from './activity'
 import { formatActiveTime } from './goalProgress'
 import type { DailyActivity } from './storage'
-import { getMonthStart, getWeekStart } from './timeStats'
+import { getDateKey, weekStartKey } from './calendar'
+import { getUserSettings } from './settings'
 
 export type MonthlySummary = {
   activeDays: number
@@ -65,8 +66,7 @@ const getBestDay = (activities: DailyActivity[]): DailyActivity | null =>
 const getBestWeek = (activities: DailyActivity[]): WeekBucket | null => {
   const weekBuckets = activities.reduce<Record<string, WeekBucket>>(
     (buckets, activity) => {
-      const date = parseLocalDateKey(activity.date)
-      const weekKey = getLocalDateKey(getWeekStart(date))
+      const weekKey = weekStartKey(activity.date)
       const bucket = buckets[weekKey] ?? {
         activeSeconds: 0,
         startDate: activity.date,
@@ -125,8 +125,9 @@ const getWeekLabel = (week: WeekBucket): string => {
 export const getCurrentMonthSummary = async (
   today: Date = new Date(),
 ): Promise<MonthlySummary> => {
-  const monthStart = getMonthStart(today)
-  const activities = await getActivityForDateRange(monthStart, today)
+  const { timezone } = await getUserSettings()
+  const todayKey = getDateKey(today, timezone)
+  const activities = await getActivityForDateRange(`${todayKey.slice(0, 7)}-01`, todayKey)
   const activeSeconds = getActiveSecondsTotal(activities)
   const activeDays = activities.filter((activity) => activity.activeSeconds > 0).length
   const dailyAverageSeconds =

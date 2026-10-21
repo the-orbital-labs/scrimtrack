@@ -1,45 +1,5 @@
+import { addCalendarDays } from './calendar'
 import type { DailyActivity, StreakStatus } from './storage'
-
-const padDatePart = (value: number): string => String(value).padStart(2, '0')
-
-const getLocalDateKey = (value: Date): string =>
-  [
-    value.getFullYear(),
-    padDatePart(value.getMonth() + 1),
-    padDatePart(value.getDate()),
-  ].join('-')
-
-const parseLocalDateKey = (dateKey: string): Date => {
-  const [year, month, day] = dateKey.split('-').map(Number)
-
-  return new Date(year, month - 1, day)
-}
-
-const getPreviousLocalDateKey = (dateKey: string): string => {
-  const date = parseLocalDateKey(dateKey)
-
-  date.setDate(date.getDate() - 1)
-
-  return getLocalDateKey(date)
-}
-
-const isPreviousLocalDate = (
-  previousDate: Date | null,
-  currentDate: Date,
-): boolean => {
-  if (!previousDate) {
-    return false
-  }
-
-  return (
-    previousDate.getTime() ===
-    new Date(
-      currentDate.getFullYear(),
-      currentDate.getMonth(),
-      currentDate.getDate() - 1,
-    ).getTime()
-  )
-}
 
 const calculateLongestActiveStreak = (
   activities: Record<string, DailyActivity>,
@@ -53,16 +13,14 @@ const calculateLongestActiveStreak = (
   ].sort()
   let longestStreak = 0
   let rollingStreak = 0
-  let previousDate: Date | null = null
+  let previousDate: string | null = null
 
   for (const dateKey of sortedActiveDates) {
-    const currentDate = parseLocalDateKey(dateKey)
-
-    rollingStreak = isPreviousLocalDate(previousDate, currentDate)
+    rollingStreak = previousDate === addCalendarDays(dateKey, -1)
       ? rollingStreak + 1
       : 1
     longestStreak = Math.max(longestStreak, rollingStreak)
-    previousDate = currentDate
+    previousDate = dateKey
   }
 
   return longestStreak
@@ -82,12 +40,12 @@ export const calculateStreakStatus = (
   let currentStreak = 0
   const currentStreakStartDate = activeDates.has(today)
     ? today
-    : getPreviousLocalDateKey(today)
+    : addCalendarDays(today, -1)
 
   for (
-    let cursor = parseLocalDateKey(currentStreakStartDate);
-    activeDates.has(getLocalDateKey(cursor));
-    cursor.setDate(cursor.getDate() - 1)
+    let cursor = currentStreakStartDate;
+    activeDates.has(cursor);
+    cursor = addCalendarDays(cursor, -1)
   ) {
     currentStreak += 1
   }

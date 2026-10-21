@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 import {
   getActivityForDate,
+  getCurrentStreakStatus,
   getLocalDateKey,
   recalculateStreakStatus,
 } from './activity'
@@ -203,7 +204,7 @@ function App() {
   const refreshTodayActivity = useCallback(() => {
     void Promise.all([
       getActivityForDate(new Date()),
-      getStorageValue('streakStatus'),
+      getCurrentStreakStatus(),
       getDashboardHeatmapGrid(),
       getCurrentWeekTimeStats(),
       getCurrentMonthTimeStats(),
@@ -283,6 +284,8 @@ function App() {
       }
 
       const nextUserSettings = nextSettings as Partial<UserSettings>
+
+      if (typeof nextUserSettings.timezone === 'string') refreshTodayActivity()
 
       setSettings((currentSettings) =>
         currentSettings
@@ -601,6 +604,7 @@ function App() {
   const liveTodayActiveSeconds = useLiveActivitySeconds(
     todayActivity,
     isLiveActivityRunning,
+    settings?.timezone,
   )
   const displayedTodayActivity = todayActivity
     ? {
@@ -692,7 +696,7 @@ function App() {
     heatmapGrid?.weeks
       .flatMap((week) => week.days)
       .filter((day) => !day.isOutsideRange && !day.isFuture) ?? []
-  const today = new Date()
+  const today = parseLocalDateKey(todayActivity?.date ?? getLocalDateKey())
   const selectedHeatmapStartDate =
     heatmapPeriod === 'week'
       ? getWeekStart(today)
@@ -750,7 +754,7 @@ function App() {
     settings?.trackingEnabled === false ? 'Tracking paused' : 'Tracking on'
   const trackingStatusClass =
     settings?.trackingEnabled === false ? 'is-paused' : 'is-active'
-  const currentDateText = fullDateFormatter.format(new Date())
+  const currentDateText = fullDateFormatter.format(today)
   const currentStreak = streakStatus?.currentStreak ?? 0
   const currentStreakLabel = `${currentStreak} ${currentStreak === 1 ? 'day' : 'days'}`
   const todaySummaryDetail =

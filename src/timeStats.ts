@@ -1,4 +1,6 @@
-import { getActivityForDateRange, getLocalDateKey } from './activity'
+import { getDateKey, weekStartKey } from './calendar'
+import { getUserSettings } from './settings'
+import { getActivityForDateRange } from './activity'
 import { getStorageValue } from './storage'
 
 export type WeeklyTimeStats = {
@@ -38,8 +40,10 @@ export const getMonthStart = (date: Date = new Date()): Date =>
 export const getCurrentWeekTimeStats = async (
   today: Date = new Date(),
 ): Promise<WeeklyTimeStats> => {
-  const weekStart = getWeekStart(today)
-  const activities = await getActivityForDateRange(weekStart, today)
+  const { timezone } = await getUserSettings()
+  const todayKey = getDateKey(today, timezone)
+  const startKey = weekStartKey(todayKey)
+  const activities = await getActivityForDateRange(startKey, todayKey)
   const activeSeconds = activities.reduce(
     (total, activity) => total + activity.activeSeconds,
     0,
@@ -51,8 +55,8 @@ export const getCurrentWeekTimeStats = async (
     averageSecondsPerDay:
       dayCount > 0 ? Math.floor(activeSeconds / dayCount) : 0,
     dayCount,
-    startDate: getLocalDateKey(weekStart),
-    endDate: getLocalDateKey(today),
+    startDate: startKey,
+    endDate: todayKey,
   }
 }
 
@@ -73,8 +77,10 @@ export const getAllTimeStats = async (): Promise<AllTimeStats> => {
 export const getCurrentMonthTimeStats = async (
   today: Date = new Date(),
 ): Promise<MonthlyTimeStats> => {
-  const monthStart = getMonthStart(today)
-  const activities = await getActivityForDateRange(monthStart, today)
+  const { timezone } = await getUserSettings()
+  const todayKey = getDateKey(today, timezone)
+  const startKey = `${todayKey.slice(0, 7)}-01`
+  const activities = await getActivityForDateRange(startKey, todayKey)
   const activeSeconds = activities.reduce(
     (total, activity) => total + activity.activeSeconds,
     0,
@@ -84,7 +90,7 @@ export const getCurrentMonthTimeStats = async (
     activeDays: activities.filter((activity) => activity.activeSeconds > 0).length,
     activeSeconds,
     dayCount: activities.length,
-    startDate: getLocalDateKey(monthStart),
-    endDate: getLocalDateKey(today),
+    startDate: startKey,
+    endDate: todayKey,
   }
 }

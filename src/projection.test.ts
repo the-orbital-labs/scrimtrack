@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getPathProgress } from './pathProgress'
+import { getUserSettings } from './settings'
 import {
   calculatePathHourEstimate,
   formatHoursPerDay,
@@ -52,6 +53,10 @@ const createActivity = (date: string, activeSeconds: number): DailyActivity => (
 })
 
 beforeEach(() => {
+  vi.mocked(getUserSettings).mockResolvedValue({
+    dailyGoalSeconds: 1800, floatingWidgetVisible: true, idleTimeoutSeconds: 120,
+    trackingEnabled: true, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  })
   mockedGetPathProgress.mockResolvedValue({ ...basePathProgress })
   mockedGetStorageValue.mockResolvedValue({})
 })

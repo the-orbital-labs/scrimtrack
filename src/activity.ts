@@ -1,3 +1,4 @@
+import { addCalendarDays, getDateKey, nextDateBoundary } from './calendar'
 import { defineStorageMutation } from './storageMutations'
 import { getUserSettings } from './settings'
 import { getStorageValue, setStorageValue, updateStorageValue } from './storage'
@@ -32,46 +33,30 @@ type ActivitySegment = {
   startedAt: string
 }
 
-const padDatePart = (value: number): string => String(value).padStart(2, '0')
-
-export const getLocalDateKey = (value: Date | string = new Date()): string => {
-  const date = typeof value === 'string' ? new Date(value) : value
-
-  return [
-    date.getFullYear(),
-    padDatePart(date.getMonth() + 1),
-    padDatePart(date.getDate()),
-  ].join('-')
-}
-
-const parseLocalDateKey = (dateKey: string): Date => {
-  const [year, month, day] = dateKey.split('-').map(Number)
-
-  return new Date(year, month - 1, day)
-}
-
-const getNextLocalDateStart = (value: Date): Date =>
-  new Date(value.getFullYear(), value.getMonth(), value.getDate() + 1)
+export const getLocalDateKey = getDateKey
 
 const splitIntervalByLocalDate = (
   startedAt: string,
   endedAt: string,
+  timezone: string,
 ): ActivitySegment[] => {
   const segments: ActivitySegment[] = []
   let cursor = new Date(startedAt)
   const end = new Date(endedAt)
+  const startTime = cursor.getTime()
+  let accountedSeconds = 0
 
   while (cursor < end) {
-    const nextDateStart = getNextLocalDateStart(cursor)
-    const segmentEnd = nextDateStart < end ? nextDateStart : end
-    const activeSeconds = Math.floor(
-      (segmentEnd.getTime() - cursor.getTime()) / 1000,
-    )
+    const sameDate = getDateKey(cursor, timezone) === getDateKey(new Date(end.getTime() - 1), timezone)
+    const segmentEnd = sameDate ? end : nextDateBoundary(cursor, timezone)
+    const elapsedSeconds = Math.floor((segmentEnd.getTime() - startTime) / 1000)
+    const activeSeconds = elapsedSeconds - accountedSeconds
+    accountedSeconds = elapsedSeconds
 
     if (activeSeconds > 0) {
       segments.push({
         activeSeconds,
-        date: getLocalDateKey(cursor),
+        date: getDateKey(cursor, timezone),
         startedAt: cursor.toISOString(),
         endedAt: segmentEnd.toISOString(),
       })
@@ -159,7 +144,9 @@ const withUpdatedSession = (
 
 const recalculateStreakForDate = defineStorageMutation(
   'recalculateStreakStatus',
-  async (todayKey: string) => {
+  async (today?: string) => {
+    const { timezone } = await getUserSettings()
+    const todayKey = today ?? getDateKey(new Date(), timezone)
     const activities = await getStorageValue('dailyActivities')
     const streakStatus = calculateStreakStatus(activities, todayKey)
 
@@ -169,12 +156,14 @@ const recalculateStreakForDate = defineStorageMutation(
   },
 )
 
-export const recalculateStreakStatus = (today: string | Date = new Date()) =>
-  recalculateStreakForDate(typeof today === 'string' ? today : getLocalDateKey(today))
+export const recalculateStreakStatus = async (today?: string | Date) => {
+  const { timezone } = await getUserSettings()
+  return recalculateStreakForDate(today instanceof Date ? getDateKey(today, timezone) : today)
+}
 
 export const ensureTodayActivity = async (): Promise<DailyActivity> => {
-  const today = getLocalDateKey()
-  const { dailyGoalSeconds } = await getUserSettings()
+  const { dailyGoalSeconds, timezone } = await getUserSettings()
+  const today = getDateKey(new Date(), timezone)
   const activities = await updateStorageValue('dailyActivities', (current) => ({
     ...current,
     [today]: getOrCreateActivity(current, today, dailyGoalSeconds),
@@ -186,8 +175,8 @@ export const ensureTodayActivity = async (): Promise<DailyActivity> => {
 export const startLearningSession = async (
   session: StartLearningSessionInput,
 ): Promise<DailyActivity> => {
-  const date = getLocalDateKey(session.startedAt)
-  const { dailyGoalSeconds } = await getUserSettings()
+  const { dailyGoalSeconds, timezone } = await getUserSettings()
+  const date = getDateKey(session.startedAt, timezone)
   const activities = await updateStorageValue('dailyActivities', (current) => {
     const activity = getOrCreateActivity(current, date, dailyGoalSeconds)
 
@@ -303,8 +292,8 @@ export const addActiveSecondsToToday = async ({
   title,
 }: AddActiveSecondsInput): Promise<DailyActivity> => {
   const seconds = normalizeActiveSeconds(activeSeconds)
-  const date = getLocalDateKey(recordedAt)
-  const { dailyGoalSeconds } = await getUserSettings()
+  const { dailyGoalSeconds, timezone } = await getUserSettings()
+  const date = getDateKey(recordedAt, timezone)
   const activities = await updateStorageValue('dailyActivities', (current) => {
     const activity = getOrCreateActivity(current, date, dailyGoalSeconds)
     const nextActivity = withGoalCompletion({
@@ -351,8 +340,8 @@ export const addActiveSecondsForInterval = async ({
 
   const endedAtTime = new Date(endedAt).getTime()
   const startedAt = new Date(endedAtTime - seconds * 1000).toISOString()
-  const segments = splitIntervalByLocalDate(startedAt, endedAt)
-  const { dailyGoalSeconds } = await getUserSettings()
+  const { dailyGoalSeconds, timezone } = await getUserSettings()
+  const segments = splitIntervalByLocalDate(startedAt, endedAt, timezone)
   const activities = await updateStorageValue('dailyActivities', (current) => {
     let nextActivities = { ...current }
 
@@ -398,8 +387,8 @@ export const addActiveSecondsForInterval = async ({
 export const getActivityForDate = async (
   date: string | Date,
 ): Promise<DailyActivity> => {
-  const dateKey = typeof date === 'string' ? date : getLocalDateKey(date)
-  const { dailyGoalSeconds } = await getUserSettings()
+  const { dailyGoalSeconds, timezone } = await getUserSettings()
+  const dateKey = typeof date === 'string' ? date : getDateKey(date, timezone)
   const activities = await getStorageValue('dailyActivities')
 
   return getOrCreateActivity(activities, dateKey, dailyGoalSeconds)
@@ -409,23 +398,14 @@ export const getActivityForDateRange = async (
   startDate: string | Date,
   endDate: string | Date,
 ): Promise<DailyActivity[]> => {
-  const startKey =
-    typeof startDate === 'string' ? startDate : getLocalDateKey(startDate)
-  const endKey = typeof endDate === 'string' ? endDate : getLocalDateKey(endDate)
-  const start = parseLocalDateKey(startKey)
-  const end = parseLocalDateKey(endKey)
-  const { dailyGoalSeconds } = await getUserSettings()
+  const { dailyGoalSeconds, timezone } = await getUserSettings()
+  const startKey = typeof startDate === 'string' ? startDate : getDateKey(startDate, timezone)
+  const endKey = typeof endDate === 'string' ? endDate : getDateKey(endDate, timezone)
   const activities = await getStorageValue('dailyActivities')
   const results: DailyActivity[] = []
 
-  for (
-    const cursor = new Date(start);
-    cursor <= end;
-    cursor.setDate(cursor.getDate() + 1)
-  ) {
-    const dateKey = getLocalDateKey(cursor)
-
-    results.push(getOrCreateActivity(activities, dateKey, dailyGoalSeconds))
+  for (let key = startKey; key <= endKey; key = addCalendarDays(key, 1)) {
+    results.push(getOrCreateActivity(activities, key, dailyGoalSeconds))
   }
 
   return results
@@ -434,8 +414,8 @@ export const getActivityForDateRange = async (
 export const updateGoalCompletionStatus = async (
   date: string | Date = new Date(),
 ): Promise<DailyActivity> => {
-  const dateKey = typeof date === 'string' ? date : getLocalDateKey(date)
-  const { dailyGoalSeconds } = await getUserSettings()
+  const { dailyGoalSeconds, timezone } = await getUserSettings()
+  const dateKey = typeof date === 'string' ? date : getDateKey(date, timezone)
   const activities = await updateStorageValue('dailyActivities', (current) => {
     const activity = getOrCreateActivity(current, dateKey, dailyGoalSeconds)
 
@@ -450,4 +430,11 @@ export const updateGoalCompletionStatus = async (
   )
 
   return activities[dateKey]
+}
+
+export const getCurrentStreakStatus = async (now = new Date()) => {
+  const [activities, settings] = await Promise.all([
+    getStorageValue('dailyActivities'), getUserSettings(),
+  ])
+  return calculateStreakStatus(activities, getDateKey(now, settings.timezone))
 }

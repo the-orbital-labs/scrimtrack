@@ -1,7 +1,8 @@
 import { getActivityForDateRange } from './activity'
 import { formatActiveTime } from './goalProgress'
 import type { DailyActivity } from './storage'
-import { getWeekStart } from './timeStats'
+import { addCalendarDays, getDateKey, weekStartKey } from './calendar'
+import { getUserSettings } from './settings'
 
 export type WeeklySummary = {
   activeDays: number
@@ -22,14 +23,6 @@ export type WeeklySummary = {
 const weekdayFormatter = new Intl.DateTimeFormat(undefined, {
   weekday: 'long',
 })
-
-const addDays = (date: Date, days: number): Date => {
-  const nextDate = new Date(date)
-
-  nextDate.setDate(nextDate.getDate() + days)
-
-  return nextDate
-}
 
 const parseLocalDateKey = (dateKey: string): Date => {
   const [year, month, day] = dateKey.split('-').map(Number)
@@ -99,11 +92,13 @@ const getComparisonTrend = (
 export const getCurrentWeekSummary = async (
   today: Date = new Date(),
 ): Promise<WeeklySummary> => {
-  const weekStart = getWeekStart(today)
-  const previousWeekStart = addDays(weekStart, -7)
-  const previousWeekEnd = addDays(weekStart, -1)
+  const { timezone } = await getUserSettings()
+  const todayKey = getDateKey(today, timezone)
+  const weekStart = weekStartKey(todayKey)
+  const previousWeekStart = addCalendarDays(weekStart, -7)
+  const previousWeekEnd = addCalendarDays(weekStart, -1)
   const [currentWeekActivities, previousWeekActivities] = await Promise.all([
-    getActivityForDateRange(weekStart, today),
+    getActivityForDateRange(weekStart, todayKey),
     getActivityForDateRange(previousWeekStart, previousWeekEnd),
   ])
   const activeSeconds = getActiveSecondsTotal(currentWeekActivities)

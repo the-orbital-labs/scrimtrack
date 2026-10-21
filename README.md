@@ -141,3 +141,12 @@ ScrimTrack is an unofficial project and is not affiliated with, endorsed by, or 
 ## License
 
 ScrimTrack is released under the [MIT License](LICENSE).
+
+### Calendar behavior
+
+The saved timezone determines the current learning day, midnight splits, weekly
+and monthly summaries, streaks, heatmaps, and finish estimates. Weeks start on
+Sunday. Pace windows and finish estimates count calendar dates, including across
+daylight saving changes. Open views refresh their calendar data every five seconds.
+Changing timezone applies to future tracking and the current view; existing daily
+history keeps its recorded dates and is not redistributed.

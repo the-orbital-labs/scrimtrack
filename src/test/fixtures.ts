@@ -53,7 +53,7 @@ export const createComponentTestStorage = (): Partial<StorageSchema> => {
       floatingWidgetVisible: false,
       idleTimeoutSeconds: 2 * 60,
       trackingEnabled: true,
-      timezone: 'UTC',
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     },
   }
 }

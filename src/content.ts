@@ -60,12 +60,17 @@ const getExtensionUrl = (path: string): string | null => {
   }
 }
 
-const getLocalDateKey = (value: Date = new Date()): string =>
-  [
-    value.getFullYear(),
-    String(value.getMonth() + 1).padStart(2, '0'),
-    String(value.getDate()).padStart(2, '0'),
-  ].join('-')
+const getLocalDateKey = (
+  value: Date = new Date(),
+  timezone = defaultUserSettings.timezone,
+): string => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(value)
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((entry) => entry.type === type)!.value
+  return `${part('year')}-${part('month')}-${part('day')}`
+}
 
 const getStorageValue = <Value>(
   key: string,
@@ -105,7 +110,7 @@ const getCurrentScrimbaPage = (): Promise<CurrentScrimbaPage> =>
 const getTodayActivity = async (
   settings: UserSettings,
 ): Promise<DailyActivity> => {
-  const today = getLocalDateKey()
+  const today = getLocalDateKey(new Date(), settings.timezone)
   const activities = await getStorageValue<Record<string, DailyActivity>>(
     'dailyActivities',
     {},
@@ -1596,7 +1601,8 @@ if (
     }
   }
   let widgetDisplayedActiveSeconds = 0
-  let widgetDisplayDate = getLocalDateKey()
+  let widgetTimezone = defaultUserSettings.timezone
+  let widgetDisplayDate = getLocalDateKey(new Date(), widgetTimezone)
   let widgetGoalSeconds = defaultUserSettings.dailyGoalSeconds
   let widgetGoalCompleted = false
   let expandedWidgetPosition: WidgetPosition | null = null
@@ -1858,7 +1864,7 @@ if (
   }
 
   const tickWidgetDisplay = () => {
-    const today = getLocalDateKey()
+    const today = getLocalDateKey(new Date(), widgetTimezone)
 
     if (widgetDisplayDate !== today) {
       widgetDisplayDate = today
@@ -1885,6 +1891,8 @@ if (
       getTodayActivity(settings),
       getCurrentScrimbaPage(),
     ])).then(([settings, todayActivity, currentScrimbaPage]) => {
+      const timezoneChanged = widgetTimezone !== settings.timezone
+      widgetTimezone = settings.timezone
       const progress = getGoalProgress(todayActivity, settings)
       const trackingPaused = !settings.trackingEnabled
       const isCurrentPageSession =
@@ -1900,7 +1908,7 @@ if (
           : isCurrentPageSession || isTrackingActive
             ? 'Tracking'
             : 'Ready'
-      const today = getLocalDateKey()
+      const today = getLocalDateKey(new Date(), widgetTimezone)
 
       isWidgetTimerRunning =
         !hasStorageError && !trackingPaused &&
@@ -1908,7 +1916,7 @@ if (
       widgetGoalSeconds = progress.goalSeconds
       widgetGoalCompleted = progress.isComplete
 
-      if (widgetDisplayDate !== today) {
+      if (timezoneChanged || widgetDisplayDate !== today) {
         widgetDisplayDate = today
         widgetDisplayedActiveSeconds = progress.activeSeconds
       } else if (isWidgetTimerRunning) {

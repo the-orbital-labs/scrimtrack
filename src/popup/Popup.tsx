@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import '../App.css'
-import { getActivityForDate, recalculateStreakStatus } from '../activity'
+import { getActivityForDate, getCurrentStreakStatus, recalculateStreakStatus } from '../activity'
 import { downloadLocalDataExport } from '../dataExport'
 import { formatActiveTime, getGoalProgress, secondsToMinutes } from '../goalProgress'
 import { getPopupHeatmapGrid } from '../heatmap'
@@ -126,7 +126,7 @@ function Popup() {
   const refreshTodayActivity = useCallback(() => {
     void Promise.all([
       getActivityForDate(new Date()),
-      getStorageValue('streakStatus'),
+      getCurrentStreakStatus(),
       getPopupHeatmapGrid(),
       getCurrentWeekTimeStats(),
       getPathProjection(),
@@ -182,6 +182,8 @@ function Popup() {
 
       if (nextSettings && typeof nextSettings === 'object') {
         const nextUserSettings = nextSettings as Partial<UserSettings>
+
+        if (typeof nextUserSettings.timezone === 'string') refreshTodayActivity()
 
         setSettings((currentSettings) =>
           currentSettings
@@ -479,6 +481,7 @@ function Popup() {
   const liveTodayActiveSeconds = useLiveActivitySeconds(
     todayActivity,
     isLiveActivityRunning,
+    settings?.timezone,
   )
   const displayedTodayActivity = todayActivity
     ? {
