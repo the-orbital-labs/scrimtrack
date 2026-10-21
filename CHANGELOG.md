@@ -16,6 +16,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   history and settings, recalculate derived stats, and invalidate old tracking
   messages without double-counting repeated imports.
 
+### Changed
+
+- Extracted content tracking, playback monitoring, widget UI, and embedded
+  dashboard integration into focused modules. Separated dashboard data loading,
+  activity calendar, and progress recap from the main view.
+
 ### Fixed
 
 - Persist tracking updates in a local outbox and acknowledge time only after

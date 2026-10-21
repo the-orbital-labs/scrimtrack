@@ -1,11 +1,19 @@
 import type { BrowserContext } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
+import { Script } from 'node:vm'
 import {
   expect,
   getExtensionStorage,
   seedExtensionStorage,
   test,
 } from './fixtures'
+
+test('builds content and page playback entries as self-contained classic scripts', async () => {
+  for (const entry of ['content', 'playback']) {
+    const source = await readFile(`dist/assets/${entry}.js`, 'utf8')
+    expect(() => new Script(source, { filename: `${entry}.js` })).not.toThrow()
+  }
+})
 
 const getLocalDateKey = (date: Date): string => {
   const year = date.getUTCFullYear()
@@ -229,6 +237,57 @@ test('injects the widget only on supported Scrimba pages', async ({
   await expect(
     unsupportedPage.locator('#scrimtrack-page-widget'),
   ).toHaveCount(0)
+})
+
+test('preserves widget position and restores Scrimba content after embedded dashboard navigation', async ({
+  extensionContext, extensionServiceWorker,
+}) => {
+  await extensionContext.route('https://scrimba.com/**', (route) => route.fulfill({
+    contentType: 'text/html',
+    body: `<!doctype html><title>Scrimba courses</title>
+      <style>body { margin: 24px } nav { display: flex; height: 48px; gap: 24px }
+      #courses { height: 600px; width: 100% }</style>
+      <nav><button role="tab">Recent</button><button role="tab">Issues</button></nav>
+      <main id="courses">Your Scrimba courses</main>`,
+  }))
+  const page = await extensionContext.newPage()
+  await page.goto('https://scrimba.com/courses')
+  const widget = page.locator('#scrimtrack-page-widget')
+  await expect(widget).toBeVisible()
+  const handle = widget.locator('.header')
+  const bounds = (await handle.boundingBox())!
+  await page.mouse.move(bounds.x + 30, bounds.y + 15)
+  await page.mouse.down()
+  await page.mouse.move(180, 180, { steps: 5 })
+  await page.mouse.up()
+  await expect.poll(async () => (await getExtensionStorage(extensionServiceWorker, 'widgetPosition')).widgetPosition)
+    .toMatchObject({ x: expect.any(Number), y: expect.any(Number) })
+  const position = await widget.boundingBox()
+  await widget.getByRole('button', { name: 'Collapse widget' }).click()
+  await expect(widget.getByRole('button', { name: 'Expand widget' })).toBeVisible()
+  await widget.getByRole('button', { name: 'Expand widget' }).click()
+  await expect.poll(async () => Math.round((await widget.boundingBox())!.x)).toBe(Math.round(position!.x))
+  await expect.poll(async () => Math.round((await widget.boundingBox())!.y)).toBe(Math.round(position!.y))
+
+  const tab = page.getByRole('tab', { name: 'Open ScrimTrack dashboard' })
+  await tab.click()
+  await expect(tab).toHaveAttribute('aria-selected', 'true')
+  const embedded = page.locator('#scrimtrack-embedded-dashboard')
+  await expect(embedded.locator('iframe')).toBeVisible()
+  await expect(embedded.frameLocator('iframe').getByRole('heading', { name: 'Year in Scrimba' })).toBeVisible()
+  await expect(page.locator('#courses')).toBeHidden()
+  await page.getByRole('tab', { name: 'Recent', exact: true }).click()
+  await expect(embedded).toHaveCount(0)
+  await expect(page.locator('#courses')).toBeVisible()
+  await expect(tab).toHaveAttribute('aria-selected', 'false')
+  // Reopening must restore the same host integration, without duplicate tabs.
+  await tab.click()
+  await expect(embedded.locator('iframe')).toBeVisible()
+  await expect(tab).toHaveCount(1)
+  await page.reload()
+  await expect(widget).toBeVisible()
+  await expect.poll(async () => Math.round((await widget.boundingBox())!.x)).toBe(Math.round(position!.x))
+  await expect(page.locator('#courses')).toBeVisible()
 })
 
 test('reports a worker storage failure and recovers on the next save', async ({
