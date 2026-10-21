@@ -1,3 +1,4 @@
+import { defineStorageMutation } from './storageMutations'
 import { getUserSettings } from './settings'
 import { getStorageValue, setStorageValue, updateStorageValue } from './storage'
 import type { DailyActivity, LearningSession } from './storage'
@@ -156,17 +157,20 @@ const withUpdatedSession = (
   }
 }
 
-export const recalculateStreakStatus = async (
-  today: string | Date = new Date(),
-) => {
-  const todayKey = typeof today === 'string' ? today : getLocalDateKey(today)
-  const activities = await getStorageValue('dailyActivities')
-  const streakStatus = calculateStreakStatus(activities, todayKey)
+const recalculateStreakForDate = defineStorageMutation(
+  'recalculateStreakStatus',
+  async (todayKey: string) => {
+    const activities = await getStorageValue('dailyActivities')
+    const streakStatus = calculateStreakStatus(activities, todayKey)
 
-  await setStorageValue('streakStatus', streakStatus)
+    await setStorageValue('streakStatus', streakStatus)
 
-  return streakStatus
-}
+    return streakStatus
+  },
+)
+
+export const recalculateStreakStatus = (today: string | Date = new Date()) =>
+  recalculateStreakForDate(typeof today === 'string' ? today : getLocalDateKey(today))
 
 export const ensureTodayActivity = async (): Promise<DailyActivity> => {
   const today = getLocalDateKey()

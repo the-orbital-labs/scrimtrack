@@ -1,3 +1,4 @@
+import { assertStorageHost, defineStorageMutation, settleStorageWrites } from './storageMutations'
 import type { ScrimbaCourseProgress } from './scrimbaCourse'
 
 export type ExtensionStatus = {
@@ -215,6 +216,7 @@ export const setStorageValue = <Key extends StorageKey>(
 ): Promise<boolean> =>
   new Promise((resolve, reject) => {
     try {
+      assertStorageHost()
       if (!isExtensionContextValid()) {
         throw new Error('Extension unavailable. Reload the page and try again.')
       }
@@ -246,35 +248,38 @@ export const updateStorageValue = async <Key extends StorageKey>(
   return nextValue
 }
 
-export const resetLocalData = async ({
-  resetSettings,
-}: ResetLocalDataOptions): Promise<StorageSchema> => {
-  const nextUserSettings = resetSettings
-    ? getDefaultStorageValue('userSettings')
-    : await getStorageValue('userSettings')
-  const nextPathProgress = resetSettings
-    ? getDefaultStorageValue('pathProgress')
-    : await getStorageValue('pathProgress')
+export const resetLocalData = defineStorageMutation(
+  'resetLocalData',
+  async ({
+    resetSettings,
+  }: ResetLocalDataOptions): Promise<StorageSchema> => {
+    const nextUserSettings = resetSettings
+      ? getDefaultStorageValue('userSettings')
+      : await getStorageValue('userSettings')
+    const nextPathProgress = resetSettings
+      ? getDefaultStorageValue('pathProgress')
+      : await getStorageValue('pathProgress')
 
-  const nextStorage: StorageSchema = {
-    extensionStatus: await getStorageValue('extensionStatus'),
-    currentScrimbaPage: getDefaultStorageValue('currentScrimbaPage'),
-    dailyActivities: getDefaultStorageValue('dailyActivities'),
-    streakStatus: getDefaultStorageValue('streakStatus'),
-    userSettings: nextUserSettings,
-    pathProgress: nextPathProgress,
-  }
+    const nextStorage: StorageSchema = {
+      extensionStatus: await getStorageValue('extensionStatus'),
+      currentScrimbaPage: getDefaultStorageValue('currentScrimbaPage'),
+      dailyActivities: getDefaultStorageValue('dailyActivities'),
+      streakStatus: getDefaultStorageValue('streakStatus'),
+      userSettings: nextUserSettings,
+      pathProgress: nextPathProgress,
+    }
 
-  await Promise.all([
-    setStorageValue('currentScrimbaPage', nextStorage.currentScrimbaPage),
-    setStorageValue('dailyActivities', nextStorage.dailyActivities),
-    setStorageValue('streakStatus', nextStorage.streakStatus),
-    setStorageValue('userSettings', nextStorage.userSettings),
-    setStorageValue('pathProgress', nextStorage.pathProgress),
-  ])
+    await settleStorageWrites([
+      setStorageValue('currentScrimbaPage', nextStorage.currentScrimbaPage),
+      setStorageValue('dailyActivities', nextStorage.dailyActivities),
+      setStorageValue('streakStatus', nextStorage.streakStatus),
+      setStorageValue('userSettings', nextStorage.userSettings),
+      setStorageValue('pathProgress', nextStorage.pathProgress),
+    ])
 
-  return nextStorage
-}
+    return nextStorage
+  },
+)
 
 export const getLocalDataExport = async (): Promise<LocalDataExport> => {
   const [

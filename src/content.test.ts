@@ -42,7 +42,7 @@ describe('widget storage feedback', () => {
   it('keeps the widget visible when saving its visibility fails', async () => {
     await import('./content')
     await vi.waitFor(() => expect(status()).toHaveTextContent('Ready'))
-    failNextStorageOperation('set')
+    vi.mocked(chrome.runtime.sendMessage).mockImplementationOnce((_, callback) => callback?.({ ok: false, error: 'storage-failure' }))
     widget().shadowRoot!.querySelector<HTMLButtonElement>('[data-close]')!.click()
     await vi.waitFor(() => expect(status()).toHaveTextContent('Local data error'))
     expect(widget().hidden).toBe(false)

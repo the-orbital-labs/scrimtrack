@@ -166,6 +166,27 @@ test('syncs tracking changes between the dashboard and popup', async ({
   )
 })
 
+test('preserves simultaneous settings saves from the popup and dashboard', async ({
+  extensionContext,
+  extensionId,
+  extensionServiceWorker,
+}) => {
+  const popup = await openExtensionPage(extensionContext, extensionId, 'popup.html')
+  const dashboard = await openExtensionPage(extensionContext, extensionId, 'dashboard.html')
+  await popup.locator('summary', { hasText: 'Settings' }).click()
+  const goal = popup.getByRole('group', { name: 'Daily goal presets' })
+    .getByRole('button', { name: '45m' })
+  const tracking = dashboard.getByRole('checkbox', { name: /Tracking on/ })
+
+  await Promise.all([goal.click(), tracking.click()])
+
+  await expect.poll(async () => {
+    const { userSettings } = await getExtensionStorage(extensionServiceWorker, 'userSettings')
+    return userSettings
+  }).toMatchObject({ dailyGoalSeconds: 2700, trackingEnabled: false })
+  await expect(popup.getByRole('heading', { name: 'Paused' })).toBeVisible()
+})
+
 test('injects the widget only on supported Scrimba pages', async ({
   extensionContext,
   extensionServiceWorker,

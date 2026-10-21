@@ -1,3 +1,4 @@
+import { defineStorageMutation, enableStorageHost, enqueueStorageMutation, executeStorageMutation, settleStorageWrites } from './storageMutations'
 import {
   addActiveSecondsForInterval,
   closeLearningSession,
@@ -14,6 +15,24 @@ import type { ScrimbaCourseProgress } from './scrimbaCourse'
 import { isScrimbaUrl } from './scrimbaUrl'
 import { ensureUserSettings, getUserSettings } from './settings'
 import { getStorageValue, setStorageValue, updateStorageValue } from './storage'
+
+enableStorageHost()
+
+// Position is an absolute value, but still goes through the single writer.
+defineStorageMutation('saveWidgetPosition', async (position: { x: number; y: number }) => {
+  if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+    throw new Error('Invalid widget position.')
+  }
+  return new Promise<boolean>((resolve, reject) => {
+    chrome.storage.local.set({ widgetPosition: { x: position.x, y: position.y } }, () => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message ?? 'Could not save widget position.'))
+      } else {
+        resolve(true)
+      }
+    })
+  })
+})
 
 const startupSnapshot = () => ({
   lastStartedAt: new Date().toISOString(),
@@ -257,7 +276,7 @@ const isCourseProgressDetectedMessage = (
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  void Promise.all([
+  void enqueueStorageMutation(() => settleStorageWrites([
     updateStorageValue('extensionStatus', (extensionStatus) => ({
       ...extensionStatus,
       installedAt: new Date().toISOString(),
@@ -266,7 +285,7 @@ chrome.runtime.onInstalled.addListener(() => {
     ensureUserSettings(),
     ensurePathProgress(),
     recalculateStreakStatus(),
-  ]).catch((error: unknown) => {
+  ])).catch((error: unknown) => {
     console.warn('ScrimTrack could not initialize local data:', error)
   })
 
@@ -274,20 +293,20 @@ chrome.runtime.onInstalled.addListener(() => {
 })
 
 chrome.runtime.onStartup.addListener(() => {
-  void Promise.all([
+  void enqueueStorageMutation(() => settleStorageWrites([
     updateStorageValue('extensionStatus', (extensionStatus) => ({
       ...extensionStatus,
       ...startupSnapshot(),
     })),
     recalculateStreakStatus(),
-  ]).catch((error: unknown) => {
+  ])).catch((error: unknown) => {
     console.warn('ScrimTrack could not initialize local data:', error)
   })
 
   console.info('ScrimTrack service worker started')
 })
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+const handleTrackingMessage: Parameters<typeof chrome.runtime.onMessage.addListener>[0] = (message, _sender, sendResponse) => {
   if (isCourseProgressDetectedMessage(message)) {
     void recordDetectedScrimbaCourse(message.course).then((pathProgress) => {
       sendResponse({
@@ -338,7 +357,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         )
       }
 
-      return Promise.all(writes).then(([ok]) => {
+      return settleStorageWrites(writes).then(([ok]) => {
         sendResponse({ ok, trackingEnabled: true })
       })
     }).catch((error: unknown) => {
@@ -456,7 +475,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
               }).then(() => closeLearningSession(message.sessionId, endedAt))
             : closeLearningSession(message.sessionId, endedAt)
 
-        return Promise.all([
+        return settleStorageWrites([
           updateStorageValue('currentScrimbaPage', (currentPage) => {
             if (currentPage?.sessionId !== message.sessionId) {
               return currentPage
@@ -568,7 +587,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           : message.recordedAt
 
         if (countableActiveSeconds === 0 && isNowIdle) {
-          return Promise.all([
+          return settleStorageWrites([
             updateStorageValue('currentScrimbaPage', (currentPage) => {
               if (currentPage?.sessionId !== message.sessionId) {
                 return currentPage
@@ -607,7 +626,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           title: message.title,
         }).then(async () => {
           if (isNowIdle) {
-            await Promise.all([
+            await settleStorageWrites([
               updateStorageValue('currentScrimbaPage', (currentPage) => {
                 if (currentPage?.sessionId !== message.sessionId) {
                   return currentPage
@@ -640,4 +659,37 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
     return true
   }
+}
+
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (typeof message !== 'object' || message === null || !('type' in message)) return
+  const candidate = message as Record<string, unknown>
+  const isMutation = candidate.type === 'storage:mutate'
+  const isTracking = isCourseProgressDetectedMessage(message) ||
+    isTrackingStartedMessage(message) || isTrackingStateChangedMessage(message) ||
+    isTrackingStoppedMessage(message) || isUserActivityMessage(message) ||
+    isActivityPulseMessage(message)
+  if (!isMutation && !isTracking) return
+
+  void enqueueStorageMutation(async () => {
+    if (isMutation) {
+      if (typeof candidate.command !== 'string' || !Array.isArray(candidate.args)) {
+        throw new Error('Invalid storage mutation.')
+      }
+      const value = await executeStorageMutation(candidate.command, candidate.args)
+      sendResponse({ ok: true, value })
+    } else {
+      await new Promise<void>((resolve) => {
+        handleTrackingMessage(message, sender, (response) => {
+          sendResponse(response)
+          resolve()
+        })
+      })
+    }
+  }).catch((error: unknown) => {
+    console.warn('ScrimTrack could not save local data:', error)
+    sendResponse({ ok: false, error: 'storage-failure' })
+  })
+  return true
 })

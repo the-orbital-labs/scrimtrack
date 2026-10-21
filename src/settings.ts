@@ -1,3 +1,4 @@
+import { defineStorageMutation, settleStorageWrites } from './storageMutations'
 import { getStorageValue, setStorageValue, updateStorageValue } from './storage'
 import type { CurrentScrimbaPage, UserSettings } from './storage'
 import { calculateStreakStatus } from './streak'
@@ -41,7 +42,7 @@ const pauseCurrentTrackingSession = async (pausedAt: string): Promise<void> => {
     return
   }
 
-  await Promise.all([
+  await settleStorageWrites([
     setStorageValue('currentScrimbaPage', {
       ...currentScrimbaPage,
       isActive: false,
@@ -90,75 +91,90 @@ const markSessionInactive = (
 export const getUserSettings = (): Promise<UserSettings> =>
   getStorageValue('userSettings')
 
-export const saveDailyGoal = async (
-  dailyGoalSeconds: number,
-): Promise<UserSettings> => {
-  const normalizedDailyGoalSeconds = normalizeDailyGoalSeconds(dailyGoalSeconds)
-  const settings = await updateStorageValue('userSettings', (currentSettings) => ({
-    ...currentSettings,
-    dailyGoalSeconds: normalizedDailyGoalSeconds,
-  }))
-  const today = getLocalDateKey()
+export const saveDailyGoal = defineStorageMutation(
+  'saveDailyGoal',
+  async (
+    dailyGoalSeconds: number,
+  ): Promise<UserSettings> => {
+    const normalizedDailyGoalSeconds = normalizeDailyGoalSeconds(dailyGoalSeconds)
+    const settings = await updateStorageValue('userSettings', (currentSettings) => ({
+      ...currentSettings,
+      dailyGoalSeconds: normalizedDailyGoalSeconds,
+    }))
+    const today = getLocalDateKey()
 
-  const activities = await updateStorageValue('dailyActivities', (currentActivities) => {
-    const activity = currentActivities[today] ?? {
-      date: today,
-      activeSeconds: 0,
-      goalSeconds: normalizedDailyGoalSeconds,
-      goalCompleted: false,
-      sessions: [],
-    }
-
-    return {
-      ...currentActivities,
-      [today]: {
-        ...activity,
+    const activities = await updateStorageValue('dailyActivities', (currentActivities) => {
+      const activity = currentActivities[today] ?? {
+        date: today,
+        activeSeconds: 0,
         goalSeconds: normalizedDailyGoalSeconds,
-        goalCompleted: activity.activeSeconds >= normalizedDailyGoalSeconds,
-      },
+        goalCompleted: false,
+        sessions: [],
+      }
+
+      return {
+        ...currentActivities,
+        [today]: {
+          ...activity,
+          goalSeconds: normalizedDailyGoalSeconds,
+          goalCompleted: activity.activeSeconds >= normalizedDailyGoalSeconds,
+        },
+      }
+    })
+    await setStorageValue('streakStatus', calculateStreakStatus(activities, today))
+
+    return settings
+  },
+)
+
+export const saveIdleTimeout = defineStorageMutation(
+  'saveIdleTimeout',
+  (
+    idleTimeoutSeconds: number,
+  ): Promise<UserSettings> =>
+    updateStorageValue('userSettings', (settings) => ({
+      ...settings,
+      idleTimeoutSeconds: toNonNegativeSeconds(idleTimeoutSeconds),
+    })),
+)
+
+export const saveTrackingEnabled = defineStorageMutation(
+  'saveTrackingEnabled',
+  async (
+    trackingEnabled: boolean,
+  ): Promise<UserSettings> => {
+    const settings = await updateStorageValue('userSettings', (settings) => ({
+      ...settings,
+      trackingEnabled,
+    }))
+
+    if (!trackingEnabled) {
+      await pauseCurrentTrackingSession(new Date().toISOString())
     }
-  })
-  await setStorageValue('streakStatus', calculateStreakStatus(activities, today))
 
-  return settings
-}
+    return settings
+  },
+)
 
-export const saveIdleTimeout = (
-  idleTimeoutSeconds: number,
-): Promise<UserSettings> =>
-  updateStorageValue('userSettings', (settings) => ({
-    ...settings,
-    idleTimeoutSeconds: toNonNegativeSeconds(idleTimeoutSeconds),
-  }))
+export const saveFloatingWidgetVisible = defineStorageMutation(
+  'saveFloatingWidgetVisible',
+  (
+    floatingWidgetVisible: boolean,
+  ): Promise<UserSettings> =>
+    updateStorageValue('userSettings', (settings) => ({
+      ...settings,
+      floatingWidgetVisible,
+    })),
+)
 
-export const saveTrackingEnabled = async (
-  trackingEnabled: boolean,
-): Promise<UserSettings> => {
-  const settings = await updateStorageValue('userSettings', (settings) => ({
-    ...settings,
-    trackingEnabled,
-  }))
-
-  if (!trackingEnabled) {
-    await pauseCurrentTrackingSession(new Date().toISOString())
-  }
-
-  return settings
-}
-
-export const saveFloatingWidgetVisible = (
-  floatingWidgetVisible: boolean,
-): Promise<UserSettings> =>
-  updateStorageValue('userSettings', (settings) => ({
-    ...settings,
-    floatingWidgetVisible,
-  }))
-
-export const saveTimezone = (timezone: string): Promise<UserSettings> =>
-  updateStorageValue('userSettings', (settings) => ({
-    ...settings,
-    timezone: normalizeTimezone(timezone),
-  }))
+export const saveTimezone = defineStorageMutation(
+  'saveTimezone',
+  (timezone: string): Promise<UserSettings> =>
+    updateStorageValue('userSettings', (settings) => ({
+      ...settings,
+      timezone: normalizeTimezone(timezone),
+    })),
+)
 
 export const ensureUserSettings = async (): Promise<UserSettings> => {
   const settings = await getUserSettings()
