@@ -70,6 +70,41 @@ for (const host of ['scrimba.com', 'v2.scrimba.com']) {
   })
 }
 
+test('counts advancing lesson playback without editor input only while focused', async ({
+  extensionContext, extensionServiceWorker,
+}) => {
+  const lesson = await extensionContext.newPage()
+  await lesson.goto('https://scrimba.com/playback-lesson')
+  await lesson.bringToFront()
+  // Supply deterministic media progress without a network stream or autoplay
+  // permission. The real content monitor, session protocol and worker still run.
+  await lesson.evaluate(() => {
+    const video = document.createElement('video')
+    Object.defineProperties(video, {
+      paused: { get: () => false },
+      readyState: { get: () => HTMLMediaElement.HAVE_ENOUGH_DATA },
+      currentTime: { get: () => performance.now() / 1000 },
+    })
+    document.body.append(video)
+  })
+  await expect.poll(() => countedSeconds(extensionServiceWorker), { timeout: 12_000 }).toBeGreaterThanOrEqual(5)
+  const other = await extensionContext.newPage()
+  await other.goto('https://example.com/other')
+  // Match the editor tab-switch test: headless focus emulation otherwise keeps
+  // the lesson focused even after bringing another tab to the front.
+  const cdp = await extensionContext.newCDPSession(lesson)
+  await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false })
+  await other.bringToFront()
+  await expect.poll(() => lesson.evaluate(() => document.hasFocus())).toBe(false)
+  await expect.poll(async () => {
+    const { currentScrimbaPage } = await getExtensionStorage(extensionServiceWorker, 'currentScrimbaPage')
+    return (currentScrimbaPage as CurrentScrimbaPage)?.isActive
+  }).toBe(false)
+  const stoppedSeconds = await countedSeconds(extensionServiceWorker)
+  await lesson.waitForTimeout(6000)
+  expect(await countedSeconds(extensionServiceWorker)).toBe(stoppedSeconds)
+})
+
 test('caps idle time and resumes counting after editor activity', async ({
   extensionContext, extensionServiceWorker,
 }) => {

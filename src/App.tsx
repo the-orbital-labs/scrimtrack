@@ -1,25 +1,21 @@
+import { ActivityCalendar } from './dashboard/ActivityCalendar'
+import { ProgressRecap } from './dashboard/ProgressRecap'
+import { SummaryStatCard } from './dashboard/SummaryStatCard'
+import { fullDateFormatter, parseLocalDateKey } from './dashboard/dateFormatting'
 import { DataImport } from './DataImport'
 import type { StorageSchema } from './storage'
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useDashboardData } from './dashboard/useDashboardData'
 import './App.css'
-import {
-  getActivityForDate,
-  getCurrentStreakStatus,
-  getLocalDateKey,
-  recalculateStreakStatus,
-} from './activity'
+import { getLocalDateKey } from './activity'
 import { downloadLocalDataExport } from './dataExport'
 import { formatActiveTime, getGoalProgress, secondsToMinutes } from './goalProgress'
-import { getDashboardHeatmapGrid } from './heatmap'
-import type { HeatmapGrid, HeatmapWeek } from './heatmap'
-import { getHeatmapTooltipLines, getHeatmapTooltipText } from './heatmapTooltip'
 import {
   getIdleTimeoutPresetLabel,
   idleTimeoutPresets,
   isIdleTimeoutPreset,
 } from './idleTimeout'
 import {
-  getPathProgress,
   getSelectableScrimbaCourses,
   getSelectedScrimbaCourse,
   isValidAverageWindowDays,
@@ -34,350 +30,66 @@ import {
 import {
   formatHoursPerDay,
   formatPathHours,
-  getFinishEstimateText,
   getPathProjection,
 } from './projection'
-import type { PathProjection } from './projection'
 import { builtInScrimbaCourses } from './scrimbaCourse'
 import {
-  getUserSettings,
   saveDailyGoal,
   saveFloatingWidgetVisible,
   saveIdleTimeout,
   saveTrackingEnabled,
 } from './settings'
-import { getStorageValue, resetLocalData } from './storage'
-import type {
-  AverageWindowDays,
-  CurrentScrimbaPage,
-  DailyActivity,
-  PathProgress,
-  StreakStatus,
-  UserSettings,
-} from './storage'
+import { resetLocalData } from './storage'
+import type { AverageWindowDays, PathProgress } from './storage'
 import { getStreakDisplayState } from './streakDisplay'
-import {
-  getAllTimeStats,
-  getCurrentMonthTimeStats,
-  getCurrentWeekTimeStats,
-} from './timeStats'
-import type { AllTimeStats, MonthlyTimeStats, WeeklyTimeStats } from './timeStats'
-import { getCurrentMonthSummary } from './monthlySummary'
-import type { MonthlySummary } from './monthlySummary'
-import { getCurrentWeekSummary } from './weeklySummary'
-import type { WeeklySummary } from './weeklySummary'
 import { useLiveActivitySeconds } from './useLiveActivitySeconds'
 
 const dailyGoalPresetMinutes = [15, 30, 45, 60] as const
-const heatmapPeriodOptions = ['year', 'month', 'week'] as const
-const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const monthFormatter = new Intl.DateTimeFormat(undefined, { month: 'short' })
-const dateRangeFormatter = new Intl.DateTimeFormat(undefined, {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-})
-const fullDateFormatter = new Intl.DateTimeFormat(undefined, {
-  day: 'numeric',
-  month: 'long',
-  weekday: 'long',
-  year: 'numeric',
-})
-
-type HeatmapPeriod = (typeof heatmapPeriodOptions)[number]
-
-const heatmapPeriodLabels: Record<HeatmapPeriod, string> = {
-  year: 'Last 365 days',
-  month: 'This month',
-  week: 'This week',
-}
-
-const pluralizeActiveDays = (count: number): string =>
-  `${count} active ${count === 1 ? 'day' : 'days'}`
-
 const isValidDailyGoalMinutes = (value: number): boolean =>
   Number.isInteger(value) && value > 0 && value <= 24 * 60
 
-const parseLocalDateKey = (dateKey: string): Date => {
-  const [year, month, day] = dateKey.split('-').map(Number)
-
-  return new Date(year, month - 1, day)
-}
-
-const getMonthKey = (dateKey: string): string => {
-  const date = parseLocalDateKey(dateKey)
-
-  return `${date.getFullYear()}-${date.getMonth()}`
-}
-
-const getMonthLabel = (
-  week: HeatmapWeek,
-  weekIndex: number,
-  weeks: HeatmapWeek[],
-): string => {
-  const previousMonthKeys = new Set(
-    weeks
-      .slice(0, weekIndex)
-      .flatMap((previousWeek) => previousWeek.days)
-      .filter((day) => !day.isOutsideRange)
-      .map((day) => getMonthKey(day.date)),
-  )
-  const firstNewMonthDay = week.days.find(
-    (day) => !day.isOutsideRange && !previousMonthKeys.has(getMonthKey(day.date)),
-  )
-
-  return firstNewMonthDay
-    ? monthFormatter.format(parseLocalDateKey(firstNewMonthDay.date))
-    : ''
-}
-
-const getWeekStart = (date: Date): Date => {
-  const weekStart = new Date(date)
-
-  weekStart.setHours(0, 0, 0, 0)
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay())
-
-  return weekStart
-}
-
-type SummaryStatCardProps = {
-  detail: string
-  isEmpty?: boolean
-  label: string
-  value: string
-}
-
-function SummaryStatCard({
-  detail,
-  isEmpty = false,
-  label,
-  value,
-}: SummaryStatCardProps) {
-  return (
-    <article className={`summary-stat-card ${isEmpty ? 'is-empty' : ''}`}>
-      <span className="metric-label">{label}</span>
-      <strong>{value}</strong>
-      <span className="summary-card-detail">{detail}</span>
-    </article>
-  )
-}
-
 function App() {
-  const [settings, setSettings] = useState<UserSettings | null>(null)
-  const [todayActivity, setTodayActivity] = useState<DailyActivity | null>(null)
-  const [currentScrimbaPage, setCurrentScrimbaPage] =
-    useState<CurrentScrimbaPage>(null)
-  const [streakStatus, setStreakStatus] = useState<StreakStatus | null>(null)
-  const [heatmapGrid, setHeatmapGrid] = useState<HeatmapGrid | null>(null)
-  const [weeklyTimeStats, setWeeklyTimeStats] = useState<WeeklyTimeStats | null>(null)
-  const [monthlyTimeStats, setMonthlyTimeStats] = useState<MonthlyTimeStats | null>(null)
-  const [allTimeStats, setAllTimeStats] = useState<AllTimeStats | null>(null)
-  const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null)
-  const [monthlySummary, setMonthlySummary] = useState<MonthlySummary | null>(null)
-  const [pathProgress, setPathProgress] = useState<PathProgress | null>(null)
-  const [finishDateText, setFinishDateText] = useState('Study on Scrimba to estimate')
-  const [finishDateLabel, setFinishDateLabel] = useState('Not estimated yet')
-  const [averagePaceSeconds, setAveragePaceSeconds] = useState(0)
-  const [completedHours, setCompletedHours] = useState(0)
-  const [remainingHours, setRemainingHours] = useState(0)
-  const [dailyGoalMinutes, setDailyGoalMinutes] = useState('30')
+  const {
+    settings,
+    setSettings,
+    todayActivity,
+    currentScrimbaPage,
+    streakStatus,
+    setStreakStatus,
+    heatmapGrid,
+    weeklyTimeStats,
+    monthlyTimeStats,
+    allTimeStats,
+    weeklySummary,
+    monthlySummary,
+    pathProgress,
+    setPathProgress,
+    finishDateText,
+    finishDateLabel,
+    averagePaceSeconds,
+    completedHours,
+    remainingHours,
+    dailyGoalMinutes,
+    setDailyGoalMinutes,
+    idleTimeoutSeconds,
+    setIdleTimeoutSeconds,
+    totalEstimatedHours,
+    setTotalEstimatedHours,
+    progressPercentage,
+    setProgressPercentage,
+    storageError,
+    setStorageError,
+    syncProjection,
+    refreshTodayActivity,
+  } = useDashboardData()
   const [dailyGoalError, setDailyGoalError] = useState<string | null>(null)
   const [dailyGoalStatusText, setDailyGoalStatusText] = useState<string | null>(null)
-  const [idleTimeoutSeconds, setIdleTimeoutSeconds] = useState(2 * 60)
   const [idleTimeoutStatusText, setIdleTimeoutStatusText] = useState<string | null>(null)
   const [trackingStatusMessage, setTrackingStatusMessage] = useState<string | null>(null)
-  const [heatmapPeriod, setHeatmapPeriod] = useState<HeatmapPeriod>('year')
-  const [totalEstimatedHours, setTotalEstimatedHours] = useState('1')
-  const [progressPercentage, setProgressPercentage] = useState('0')
   const [pathError, setPathError] = useState<string | null>(null)
   const [pathSaveStatusText, setPathSaveStatusText] = useState<string | null>(null)
   const [exportStatusText, setExportStatusText] = useState<string | null>(null)
   const [resetStatusText, setResetStatusText] = useState<string | null>(null)
-  const [storageError, setStorageError] = useState<string | null>(null)
-
-  const syncProjection = useCallback((projection: PathProjection) => {
-    setFinishDateText(getFinishEstimateText(projection, 'full'))
-    setFinishDateLabel(projection.finishDateLabel ?? 'Not estimated yet')
-    setAveragePaceSeconds(projection.averageDailySeconds)
-    setCompletedHours(projection.completedHours)
-    setRemainingHours(projection.remainingHours)
-  }, [])
-
-  const refreshTodayActivity = useCallback(() => {
-    void Promise.all([
-      getActivityForDate(new Date()),
-      getCurrentStreakStatus(),
-      getDashboardHeatmapGrid(),
-      getCurrentWeekTimeStats(),
-      getCurrentMonthTimeStats(),
-      getAllTimeStats(),
-      getCurrentWeekSummary(),
-      getCurrentMonthSummary(),
-      getPathProjection(),
-      getStorageValue('currentScrimbaPage'),
-    ]).then(
-      ([
-        activity,
-        streak,
-        heatmap,
-        weekStats,
-        monthStats,
-        allStats,
-        summary,
-        monthSummary,
-        projection,
-        currentPage,
-      ]) => {
-        setTodayActivity(activity)
-        setStreakStatus(streak)
-        setHeatmapGrid(heatmap)
-        setWeeklyTimeStats(weekStats)
-        setMonthlyTimeStats(monthStats)
-        setAllTimeStats(allStats)
-        setWeeklySummary(summary)
-        setMonthlySummary(monthSummary)
-        setCurrentScrimbaPage(currentPage)
-        syncProjection(projection)
-      },
-    ).catch(() => {
-      setStorageError('Could not load local data. Displayed values may be out of date. Reload and try again.')
-    })
-  }, [syncProjection])
-
-  useEffect(() => {
-    let isMounted = true
-    let isSettingsListenerAttached = false
-    const refreshIntervalId = window.setInterval(refreshTodayActivity, 5_000)
-    const handleSettingsChange = (
-      changes: Record<string, { newValue?: unknown; oldValue?: unknown }>,
-      areaName: string,
-    ) => {
-      if (areaName !== 'local') {
-        return
-      }
-
-      if (changes.dailyActivities || changes.trackingState) refreshTodayActivity()
-
-      const currentPageChange = changes.currentScrimbaPage
-
-      if (currentPageChange && 'newValue' in currentPageChange) {
-        setCurrentScrimbaPage(
-          (currentPageChange.newValue as CurrentScrimbaPage | undefined) ?? null,
-        )
-      }
-
-      const pathProgressChange = changes.pathProgress
-
-      if (pathProgressChange && 'newValue' in pathProgressChange) {
-        void getPathProgress().then((nextPathProgress) => {
-          setPathProgress(nextPathProgress)
-          setTotalEstimatedHours(String(nextPathProgress.totalEstimatedHours))
-          setProgressPercentage(String(nextPathProgress.progressPercentage))
-          void getPathProjection().then(syncProjection).catch(() => {
-            setStorageError('Could not load local data. Displayed values may be out of date. Reload and try again.')
-          })
-        }).catch(() => {
-          setStorageError('Could not load local data. Displayed values may be out of date. Reload and try again.')
-        })
-      }
-
-      const nextSettings = changes.userSettings?.newValue
-
-      if (!nextSettings || typeof nextSettings !== 'object') {
-        return
-      }
-
-      const nextUserSettings = nextSettings as Partial<UserSettings>
-
-      if (typeof nextUserSettings.timezone === 'string') refreshTodayActivity()
-
-      setSettings((currentSettings) =>
-        currentSettings
-          ? { ...currentSettings, ...nextUserSettings }
-          : currentSettings,
-      )
-
-      if (typeof nextUserSettings.idleTimeoutSeconds === 'number') {
-        setIdleTimeoutSeconds(nextUserSettings.idleTimeoutSeconds)
-      }
-    }
-
-    try {
-      if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
-        chrome.storage.onChanged.addListener(handleSettingsChange)
-        isSettingsListenerAttached = true
-      }
-    } catch {
-      isSettingsListenerAttached = false
-    }
-
-    void Promise.all([
-      getUserSettings(),
-      getActivityForDate(new Date()),
-      recalculateStreakStatus(),
-      getDashboardHeatmapGrid(),
-      getCurrentWeekTimeStats(),
-      getCurrentMonthTimeStats(),
-      getAllTimeStats(),
-      getCurrentWeekSummary(),
-      getCurrentMonthSummary(),
-      getPathProgress(),
-      getPathProjection(),
-      getStorageValue('currentScrimbaPage'),
-    ]).then(
-      ([
-        loadedSettings,
-        loadedTodayActivity,
-        loadedStreakStatus,
-        loadedHeatmapGrid,
-        loadedWeeklyTimeStats,
-        loadedMonthlyTimeStats,
-        loadedAllTimeStats,
-        loadedWeeklySummary,
-        loadedMonthlySummary,
-        loadedPathProgress,
-        projection,
-        loadedCurrentScrimbaPage,
-      ]) => {
-        if (!isMounted) {
-          return
-        }
-
-        setSettings(loadedSettings)
-        setTodayActivity(loadedTodayActivity)
-        setStreakStatus(loadedStreakStatus)
-        setHeatmapGrid(loadedHeatmapGrid)
-        setWeeklyTimeStats(loadedWeeklyTimeStats)
-        setMonthlyTimeStats(loadedMonthlyTimeStats)
-        setAllTimeStats(loadedAllTimeStats)
-        setWeeklySummary(loadedWeeklySummary)
-        setMonthlySummary(loadedMonthlySummary)
-        setPathProgress(loadedPathProgress)
-        setCurrentScrimbaPage(loadedCurrentScrimbaPage)
-        syncProjection(projection)
-        setTotalEstimatedHours(String(loadedPathProgress.totalEstimatedHours))
-        setProgressPercentage(String(loadedPathProgress.progressPercentage))
-        setDailyGoalMinutes(
-          String(secondsToMinutes(loadedSettings.dailyGoalSeconds)),
-        )
-        setIdleTimeoutSeconds(loadedSettings.idleTimeoutSeconds)
-      },
-    ).catch(() => {
-      setStorageError('Could not load local data. Displayed values may be out of date. Reload and try again.')
-    })
-
-    return () => {
-      isMounted = false
-      window.clearInterval(refreshIntervalId)
-      if (isSettingsListenerAttached) {
-        try {
-          chrome.storage.onChanged.removeListener(handleSettingsChange)
-        } catch {
-          // The extension context may already be invalidated during cleanup.
-        }
-      }
-    }
-  }, [refreshTodayActivity, syncProjection])
 
   const saveGoalMinutes = (minutes: number) => {
     if (!isValidDailyGoalMinutes(minutes)) {
@@ -653,10 +365,8 @@ function App() {
   )} avg/day`
   const monthlyActiveDaysText = `${monthlyTimeStats?.activeDays ?? 0} active days`
   const allTimeActiveDaysText = `${allTimeStats?.activeDays ?? 0} active days`
-  const weeklySummaryLines =
-    weeklySummary?.summaryText ?? ['Your weekly summary is loading.']
-  const monthlySummaryLines =
-    monthlySummary?.summaryText ?? ['Your monthly summary is loading.']
+
+
   const pathStatusText = pathProgress?.pathName
     ? `${pathProgress.pathName} - ${pathProgress.progressPercentage}% complete`
     : 'No path set'
@@ -684,72 +394,7 @@ function App() {
   const completedHoursText = formatPathHours(completedHours)
   const remainingHoursText =
     remainingHours <= 0 ? 'Path complete' : formatPathHours(remainingHours)
-  const weeklyComparisonDifference = Math.abs(
-    weeklySummary?.comparisonSeconds ?? 0,
-  )
-  const weeklyComparisonLabel =
-    weeklySummary?.comparisonTrend === 'increase'
-      ? 'Improved'
-      : weeklySummary?.comparisonTrend === 'decrease'
-        ? 'Declined'
-        : 'No change'
-  const weeklyBestDayText = weeklySummary?.bestDay
-    ? `${weeklySummary.bestDay.label} - ${formatActiveTime(weeklySummary.bestDay.activeSeconds)}`
-    : 'No best day yet'
-  const monthlyBestDayText = monthlySummary?.bestDay
-    ? `${monthlySummary.bestDay.label} - ${formatActiveTime(monthlySummary.bestDay.activeSeconds)}`
-    : 'No best day yet'
   const streakDisplay = getStreakDisplayState(streakStatus, todayActiveSeconds)
-  const heatmapDays =
-    heatmapGrid?.weeks
-      .flatMap((week) => week.days)
-      .filter((day) => !day.isOutsideRange && !day.isFuture) ?? []
-  const today = parseLocalDateKey(todayActivity?.date ?? getLocalDateKey())
-  const selectedHeatmapStartDate =
-    heatmapPeriod === 'week'
-      ? getWeekStart(today)
-      : heatmapPeriod === 'month'
-        ? new Date(today.getFullYear(), today.getMonth(), 1)
-        : parseLocalDateKey(heatmapGrid?.startDate ?? getLocalDateKey(today))
-  const selectedHeatmapStartKey = getLocalDateKey(selectedHeatmapStartDate)
-  const selectedHeatmapEndKey = heatmapGrid?.endDate ?? getLocalDateKey(today)
-  const selectedHeatmapDays = heatmapDays.filter(
-    (day) => day.date >= selectedHeatmapStartKey && day.date <= selectedHeatmapEndKey,
-  )
-  const todayDateKey = getLocalDateKey(today)
-  const selectedTodayHeatmapDay = selectedHeatmapDays.find(
-    (day) => day.date === todayDateKey,
-  )
-  const selectedHeatmapActiveDays = selectedHeatmapDays.filter(
-    (day) => day.activeSeconds > 0,
-  ).length +
-    (liveActivityOffset > 0 && selectedTodayHeatmapDay?.activeSeconds === 0
-      ? 1
-      : 0)
-  const selectedHeatmapActiveSeconds =
-    selectedHeatmapDays.reduce(
-      (total, day) => total + day.activeSeconds,
-      0,
-    ) + (selectedTodayHeatmapDay ? liveActivityOffset : 0)
-  const selectedHeatmapGoalDays = selectedHeatmapDays.filter(
-    (day) => day.goalCompleted,
-  ).length +
-    (selectedTodayHeatmapDay &&
-    !selectedTodayHeatmapDay.goalCompleted &&
-    goalProgress.isComplete
-      ? 1
-      : 0)
-  const heatmapDateRangeText = heatmapGrid
-    ? `${dateRangeFormatter.format(parseLocalDateKey(heatmapGrid.startDate))} to ${dateRangeFormatter.format(parseLocalDateKey(heatmapGrid.endDate))}`
-    : 'Loading activity range'
-  const heatmapMonthMarkers =
-    heatmapGrid?.weeks
-      .map((week, index, weeks) => ({
-        column: index + 1,
-        label: getMonthLabel(week, index, weeks),
-        startDate: week.startDate,
-      }))
-      .filter((marker) => marker.label) ?? []
   const trackingStatusText =
     settings?.trackingEnabled === false
       ? 'Tracking paused'
@@ -762,7 +407,7 @@ function App() {
     settings?.trackingEnabled === false ? 'Tracking paused' : 'Tracking on'
   const trackingStatusClass =
     settings?.trackingEnabled === false ? 'is-paused' : 'is-active'
-  const currentDateText = fullDateFormatter.format(today)
+  const currentDateText = fullDateFormatter.format(parseLocalDateKey(todayActivity?.date ?? getLocalDateKey()))
   const currentStreak = streakStatus?.currentStreak ?? 0
   const currentStreakLabel = `${currentStreak} ${currentStreak === 1 ? 'day' : 'days'}`
   const todaySummaryDetail =
@@ -812,137 +457,7 @@ function App() {
         </div>
       </header>
 
-      <section
-        className="panel heatmap-hero-panel"
-        aria-labelledby="dashboard-heatmap-title"
-      >
-        <div className="heatmap-hero-header">
-          <div>
-            <p className="eyebrow">Activity calendar</p>
-            <h2 id="dashboard-heatmap-title">Year in Scrimba</h2>
-            <p className="heatmap-range-label">{heatmapDateRangeText}</p>
-          </div>
-
-          <div
-            className="heatmap-period-control"
-            role="group"
-            aria-label="Heatmap summary period"
-          >
-            {heatmapPeriodOptions.map((period) => (
-              <button
-                key={period}
-                type="button"
-                className={heatmapPeriod === period ? 'is-selected' : undefined}
-                onClick={() => setHeatmapPeriod(period)}
-              >
-                {period}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="heatmap-summary-grid" aria-label="Selected period totals">
-          <span>
-            Period
-            <strong>{heatmapPeriodLabels[heatmapPeriod]}</strong>
-          </span>
-          <span>
-            Active days
-            <strong>{selectedHeatmapActiveDays}</strong>
-          </span>
-          <span>
-            Total time
-            <strong>{formatActiveTime(selectedHeatmapActiveSeconds)}</strong>
-          </span>
-          <span>
-            Goals hit
-            <strong>{selectedHeatmapGoalDays}</strong>
-          </span>
-        </div>
-
-        <div className="dashboard-heatmap" aria-label="365-day activity heatmap">
-          <div className="dashboard-months" aria-hidden="true">
-            {heatmapMonthMarkers.map((marker) => (
-              <span
-                key={marker.startDate}
-                style={{ gridColumn: `${marker.column} / span 4` }}
-              >
-                {marker.label}
-              </span>
-            ))}
-          </div>
-
-          <div className="dashboard-heatmap-body">
-            <div className="dashboard-weekdays" aria-hidden="true">
-              {weekdayLabels.map((label, index) => (
-                <span key={label}>{index % 2 === 1 ? label : ''}</span>
-              ))}
-            </div>
-
-            <div
-              className="dashboard-heatmap-grid"
-              role="img"
-              aria-label="Daily Scrimba activity for the last 365 days"
-            >
-              {heatmapGrid?.weeks.map((week) => (
-                <div className="dashboard-heatmap-week" key={week.startDate}>
-                  {week.days.map((day) => {
-                    const isSelectedPeriodDay =
-                      !day.isOutsideRange &&
-                      day.date >= selectedHeatmapStartKey &&
-                      day.date <= selectedHeatmapEndKey
-
-                    return (
-                      <span
-                        key={day.date}
-                        tabIndex={0}
-                        className={[
-                          'dashboard-heatmap-cell',
-                          'heatmap-tooltip-trigger',
-                          `heatmap-level-${day.intensity}`,
-                          day.isFuture || day.isOutsideRange ? 'is-muted' : '',
-                          isSelectedPeriodDay ? 'is-selected-period' : '',
-                          !isSelectedPeriodDay && heatmapPeriod !== 'year'
-                            ? 'is-outside-selected-period'
-                            : '',
-                        ].filter(Boolean).join(' ')}
-                        aria-label={getHeatmapTooltipText(day)}
-                      >
-                        <span className="heatmap-tooltip" role="tooltip">
-                          {getHeatmapTooltipLines(day).map((line) => (
-                            <span key={line}>{line}</span>
-                          ))}
-                        </span>
-                      </span>
-                    )
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="heatmap-legend" aria-label="Heatmap intensity legend">
-            <span>Less</span>
-            {[0, 1, 2, 3, 4, 5].map((level) => (
-              <span
-                key={level}
-                className={`dashboard-heatmap-cell heatmap-level-${level}`}
-                title={
-                  [
-                    '0 min',
-                    '1-14 min',
-                    '15-29 min',
-                    '30-59 min',
-                    '60-119 min',
-                    '120+ min',
-                  ][level]
-                }
-              />
-            ))}
-            <span>More</span>
-          </div>
-        </div>
-      </section>
+      <ActivityCalendar heatmapGrid={heatmapGrid} dateKey={todayActivity?.date} liveActivityOffset={liveActivityOffset} goalComplete={goalProgress.isComplete} />
 
       <section className="summary-grid" aria-label="Key learning stats">
         <SummaryStatCard
@@ -1291,76 +806,7 @@ function App() {
         ) : null}
       </section>
 
-      <section
-        className="panel progress-summary-section"
-        aria-labelledby="progress-summary-title"
-      >
-        <div className="panel-heading-row">
-          <div>
-            <p className="eyebrow">Progress summary</p>
-            <h2 id="progress-summary-title">Weekly and Monthly Recap</h2>
-          </div>
-          <span>Narrative recap</span>
-        </div>
-
-        <div className="progress-summary-grid">
-          <article className="summary-period-panel" aria-label="Weekly summary">
-            <div className="summary-period-header">
-              <h3>This Week</h3>
-              <span>{pluralizeActiveDays(weeklySummary?.activeDays ?? 0)}</span>
-            </div>
-            <ul className="weekly-summary-list">
-              {weeklySummaryLines.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-            <div className="weekly-summary-stats">
-              <span>
-                Best day
-                <strong>{weeklyBestDayText}</strong>
-              </span>
-              <span>
-                Previous week
-                <strong>{formatActiveTime(weeklySummary?.previousWeekActiveSeconds ?? 0)}</strong>
-              </span>
-              <span
-                className={`weekly-comparison weekly-comparison-${weeklySummary?.comparisonTrend ?? 'no-change'}`}
-              >
-                Change
-                <strong>{formatActiveTime(weeklyComparisonDifference)}</strong>
-                <small>{weeklyComparisonLabel}</small>
-              </span>
-            </div>
-          </article>
-
-          <article className="summary-period-panel" aria-label="Monthly summary">
-            <div className="summary-period-header">
-              <h3>This Month</h3>
-              <span>{pluralizeActiveDays(monthlySummary?.activeDays ?? 0)}</span>
-            </div>
-            <ul className="weekly-summary-list">
-              {monthlySummaryLines.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-            <div className="weekly-summary-stats">
-              <span>
-                Best day
-                <strong>{monthlyBestDayText}</strong>
-              </span>
-              <span>
-                Best week
-                <strong>{formatActiveTime(monthlySummary?.bestWeek?.activeSeconds ?? 0)}</strong>
-                <small>{monthlySummary?.bestWeek?.label ?? 'No activity yet'}</small>
-              </span>
-              <span>
-                Daily average
-                <strong>{formatActiveTime(monthlySummary?.dailyAverageSeconds ?? 0)}</strong>
-              </span>
-            </div>
-          </article>
-        </div>
-      </section>
+      <ProgressRecap weeklySummary={weeklySummary} monthlySummary={monthlySummary} />
 
       <section className="panel privacy-note-panel" aria-label="Privacy note">
         <div>

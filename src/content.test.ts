@@ -70,4 +70,16 @@ describe('widget storage feedback', () => {
     await vi.waitFor(() => expect(widget().shadowRoot!.querySelector('[data-today]')).toHaveTextContent('10m 00s'))
   })
 
+  it('removes the widget and stops background polling when the page leaves', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    await import('./content')
+    await vi.waitFor(() => expect(status()).toHaveTextContent('Ready'))
+    window.dispatchEvent(new Event('pagehide'))
+    expect(document.getElementById('scrimtrack-page-widget')).toBeNull()
+    vi.mocked(chrome.runtime.sendMessage).mockClear()
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
 })

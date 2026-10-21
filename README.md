@@ -183,6 +183,25 @@ Time that has not reached local storage cannot survive a browser crash or a tab
 closing while storage is unavailable. Once an outbox entry is saved, the worker
 can complete it without the originating tab.
 
+### Module boundaries
+
+`src/content.ts` coordinates page events and cleanup. Its `src/content/` modules
+own session tracking (`tracker.ts`), playback detection (`playbackMonitor.ts`),
+widget construction and behavior (`widget.ts`, `widgetController.ts`), embedded
+dashboard DOM integration (`embeddedDashboard.ts`), and worker-backed storage
+access (`storage.ts`). Delivery retries and worker persistence remain in
+`trackingDelivery.ts` and `tracking.ts` respectively.
+
+`src/dashboard/useDashboardData.ts` owns loading, periodic refresh, and storage
+subscriptions for the dashboard. The activity calendar and progress recap render
+in separate components; `App.tsx` composes them with settings and path controls.
+
+Keep content-only runtime helpers out of the React/worker dependency graph.
+Chrome injects `content.js` and `playback.js` as classic scripts; shared runtime
+imports can cause Vite to emit module chunks that those entries cannot load.
+Type-only imports are safe. Browser tests check that both built entries still
+parse as classic scripts.
+
 ### Browser tests
 
 ```bash
