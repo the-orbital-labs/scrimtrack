@@ -134,6 +134,25 @@ Keep each operation's reads and writes inside the mutation, and await every
 write before it completes. Content scripts send mutation commands through
 `chrome.runtime.sendMessage`; reads can still use `chrome.storage.local` directly.
 
+Tracking uses immutable `tracking-outbox:<session>:<sequence>` entries in local
+storage. Each content script writes only its own entries, before requesting
+delivery; the background worker owns shared totals, session receipts, and outbox
+removal. This is the only exception to the shared-data single-writer rule.
+The worker saves the receipt, daily/session totals, streak, and current-page
+state in one storage operation before acknowledging an update. Retries keep the
+same sequence and interval, and persisted receipts suppress duplicates after
+lost replies or worker restarts. Receipts are retained until a data reset.
+
+Pending entries replay when the worker starts or receives an outbox change.
+Open pages retry interrupted requests with a three-second acknowledgement
+timeout and exponential backoff capped at thirty seconds. The widget shows
+“Saving delayed” while retrying and clears that status after recovery. A reset
+commits a new tracking generation with the cleared totals; older queued updates
+are discarded, and fresh input starts a session in the new generation.
+Time that has not reached local storage cannot survive a browser crash or a tab
+closing while storage is unavailable. Once an outbox entry is saved, the worker
+can complete it without the originating tab.
+
 ### Browser tests
 
 ```bash

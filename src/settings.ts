@@ -1,7 +1,7 @@
 import { getDateKey } from './calendar'
-import { defineStorageMutation, settleStorageWrites } from './storageMutations'
-import { getStorageValue, setStorageValue, updateStorageValue } from './storage'
-import type { CurrentScrimbaPage, UserSettings } from './storage'
+import { defineStorageMutation } from './storageMutations'
+import { getStorageValue, setStorageValue, setStorageValues, updateStorageValue } from './storage'
+import type { UserSettings } from './storage'
 import { calculateStreakStatus } from './streak'
 
 const maxDailyGoalSeconds = 24 * 60 * 60
@@ -27,59 +27,6 @@ const normalizeTimezone = (timezone: string): string => {
   } catch {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   }
-}
-
-const pauseCurrentTrackingSession = async (pausedAt: string): Promise<void> => {
-  const currentScrimbaPage = await getStorageValue('currentScrimbaPage')
-
-  if (!currentScrimbaPage) {
-    return
-  }
-
-  await settleStorageWrites([
-    setStorageValue('currentScrimbaPage', {
-      ...currentScrimbaPage,
-      isActive: false,
-      isIdle: true,
-      lastInactiveAt: pausedAt,
-      lastIdleAt: pausedAt,
-    }),
-    markSessionInactive(currentScrimbaPage, pausedAt),
-  ])
-}
-
-const markSessionInactive = (
-  currentScrimbaPage: CurrentScrimbaPage,
-  pausedAt: string,
-): Promise<unknown> => {
-  if (!currentScrimbaPage) {
-    return Promise.resolve()
-  }
-
-  return updateStorageValue('dailyActivities', (activities) => {
-    let didUpdate = false
-    const nextActivities = Object.fromEntries(
-      Object.entries(activities).map(([date, activity]) => {
-        const sessions = activity.sessions.map((session) => {
-          if (session.id !== currentScrimbaPage.sessionId) {
-            return session
-          }
-
-          didUpdate = true
-
-          return {
-            ...session,
-            isActive: false,
-            endedAt: session.endedAt ?? pausedAt,
-          }
-        })
-
-        return [date, didUpdate ? { ...activity, sessions } : activity]
-      }),
-    )
-
-    return didUpdate ? nextActivities : activities
-  })
 }
 
 export const getUserSettings = (): Promise<UserSettings> =>
@@ -134,19 +81,28 @@ export const saveIdleTimeout = defineStorageMutation(
 
 export const saveTrackingEnabled = defineStorageMutation(
   'saveTrackingEnabled',
-  async (
-    trackingEnabled: boolean,
-  ): Promise<UserSettings> => {
-    const settings = await updateStorageValue('userSettings', (settings) => ({
-      ...settings,
-      trackingEnabled,
-    }))
-
-    if (!trackingEnabled) {
-      await pauseCurrentTrackingSession(new Date().toISOString())
+  async (trackingEnabled: boolean): Promise<UserSettings> => {
+    const [settings, state, page, activities] = await Promise.all([
+      getUserSettings(), getStorageValue('trackingState'),
+      getStorageValue('currentScrimbaPage'), getStorageValue('dailyActivities'),
+    ])
+    const next = { ...settings, trackingEnabled }
+    if (trackingEnabled) {
+      await setStorageValue('userSettings', next)
+    } else {
+      const at = new Date().toISOString()
+      await setStorageValues({
+        userSettings: next,
+        trackingState: { ...state, sessions: Object.fromEntries(Object.entries(state.sessions).map(([id, record]) =>
+          [id, { ...record, activeUntil: record.activeUntil ?? at }])) },
+        currentScrimbaPage: page ? { ...page, isActive: false, isIdle: true, lastInactiveAt: at, lastIdleAt: at } : null,
+        dailyActivities: Object.fromEntries(Object.entries(activities).map(([date, day]) => [date, {
+          ...day, sessions: day.sessions.map((session) => session.isActive
+            ? { ...session, isActive: false, endedAt: at } : session),
+        }])),
+      })
     }
-
-    return settings
+    return next
   },
 )
 

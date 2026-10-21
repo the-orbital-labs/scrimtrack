@@ -155,6 +155,8 @@ function Popup() {
         return
       }
 
+      if (changes.dailyActivities || changes.trackingState) refreshTodayActivity()
+
       const currentPageChange = changes.currentScrimbaPage
 
       if (currentPageChange && 'newValue' in currentPageChange) {

@@ -1,4 +1,6 @@
 import { detectScrimbaCourseProgress } from './scrimbaCourseDetection'
+import { createTrackingDelivery } from './trackingDelivery'
+import type { TrackingReply, TrackingUpdate } from './trackingProtocol'
 
 const scrimbaHosts = new Set(['scrimba.com', 'v2.scrimba.com'])
 
@@ -213,8 +215,6 @@ const getPageTitle = (): string | null => {
   return title || null
 }
 
-type UserActivityEventType = 'code-interaction' | 'media-playback'
-
 type RuntimeResponse = {
   error?: string
   isIdle?: boolean
@@ -291,6 +291,12 @@ if (
   let lastActivityAt = Date.now()
   let lastActivityMessageAt = 0
   let lastAccountedAt = 0
+  let lastQueuedAt = 0
+  let trackingEpoch: string | null = null
+  let startingSession = false
+  let resetVersion = 0
+  const sequences = new Map<string, number>()
+  let hasTrackingDeliveryError = false
   let trackingTickIntervalId: number | null = null
   let mediaPlaybackCheckIntervalId: number | null = null
   let widgetRefreshIntervalId: number | null = null
@@ -392,14 +398,6 @@ if (
         eventTarget instanceof Element && eventTarget.matches(codeEditorSelector),
     )
 
-  const getUnsentActiveSeconds = (recordedAt: number): number => {
-    if (lastAccountedAt === 0) {
-      return 0
-    }
-
-    return Math.max(0, Math.floor((recordedAt - lastAccountedAt) / 1000))
-  }
-
   const stopTrackingTick = () => {
     if (trackingTickIntervalId === null) {
       return
@@ -449,17 +447,53 @@ if (
     currentSessionStartedAt = null
     pausedSession = null
     lastAccountedAt = 0
+    lastQueuedAt = 0
     stopTrackingTick()
   }
 
-  const handleTickResponse = (sessionId: string, response: unknown) => {
-    if (!isRuntimeResponse(response)) {
+  const delivery = createTrackingDelivery((update, reply) => {
+    if (reply.ok && hasTrackingDeliveryError) {
+      hasTrackingDeliveryError = false
+      hasStorageError = false
+      widget?.statusText?.removeAttribute('role')
+      refreshWidget()
+    }
+    if (reply.error === 'tracking-reset') {
+      trackingEpoch = reply.epoch ?? null
+      delivery.cancel()
+      if (currentSessionId) markSessionStopped(currentSessionId)
+      pausedSession = null
       return
     }
-
-    if (response.trackingEnabled === false || response.isIdle === true) {
-      markSessionStopped(sessionId)
+    if (currentSessionId !== update.sessionId) return
+    if (reply.ok && (update.kind === 'pulse' || update.kind === 'stop')) {
+      // Capturing an interval never advances this acknowledged cursor.
+      lastAccountedAt = Math.max(lastAccountedAt, Date.parse(update.at))
     }
+    if (reply.trackingEnabled === false ||
+      (reply.isActive === false && lastActivityAt <= Date.parse(update.at))) {
+      markSessionStopped(update.sessionId)
+      refreshWidget()
+    }
+  }, () => {
+    hasTrackingDeliveryError = true
+    reportStorageError()
+    if (widget) {
+      widget.statusText!.textContent = 'Saving delayed. Retrying local data...'
+      widget.collapsedStatus!.textContent = 'Saving delayed'
+    }
+  })
+
+  const queueTrackingUpdate = (
+    kind: TrackingUpdate['kind'], sessionId: string, at: number, from = at,
+  ): Promise<TrackingReply> => {
+    const sequence = (sequences.get(sessionId) ?? 0) + 1
+    sequences.set(sessionId, sequence)
+    return delivery.send({
+      type: 'scrimba:tracking-update', epoch: trackingEpoch!, sessionId, sequence,
+      kind, at: new Date(at).toISOString(), from: new Date(from).toISOString(),
+      url: window.location.href, title: getPageTitle(), isMediaPlaying: isMediaPlaybackActive,
+    })
   }
 
   const sendTrackingTick = () => {
@@ -467,187 +501,86 @@ if (
       stopTrackingTick()
       return
     }
-
-    const recordedAt = Date.now()
-    const activeSeconds = getUnsentActiveSeconds(recordedAt)
-
-    if (activeSeconds === 0) {
-      return
-    }
-
-    const sessionId = currentSessionId
-    lastAccountedAt = recordedAt
-
-    const wasSent = sendRuntimeMessage(
-      {
-        type: 'scrimba:activity-pulse',
-        sessionId,
-        url: window.location.href,
-        title: getPageTitle(),
-        activeSeconds,
-        isMediaPlaying: isMediaPlaybackActive,
-        recordedAt: new Date(recordedAt).toISOString(),
-      },
-      (response) => handleTickResponse(sessionId, response),
-    )
-
-    if (!wasSent) {
-      markSessionStopped(sessionId)
-    }
+    const from = Math.max(lastQueuedAt, lastAccountedAt)
+    // Keep subsecond time for the next interval rather than discarding it at
+    // each pulse. Retries keep these exact bounds, not a fresh elapsed delta.
+    const at = from + Math.floor((Date.now() - from) / 1000) * 1000
+    if (at <= from) return
+    lastQueuedAt = at
+    void queueTrackingUpdate('pulse', currentSessionId, at, from)
   }
 
   const startTrackingTick = () => {
-    if (!isTrackingActive || isTrackingIdle || trackingTickIntervalId !== null) {
-      return
-    }
-
+    if (!isTrackingActive || isTrackingIdle || trackingTickIntervalId !== null) return
     trackingTickIntervalId = window.setInterval(sendTrackingTick, 5_000)
   }
 
   const startActiveSession = () => {
-    if (currentSessionId || !isPageActive()) {
-      return
-    }
-
+    if (currentSessionId || startingSession || !isPageActive()) return
     const now = Date.now()
-    const reusableSession =
-      pausedSession && now - pausedSession.stoppedAt <= sessionResumeGraceMs
-        ? pausedSession
-        : null
-    const startedAt = reusableSession?.startedAt ?? new Date(now).toISOString()
-    const sessionId = reusableSession?.id ?? createSessionId()
-
-    currentSessionId = sessionId
-    currentSessionStartedAt = startedAt
-    pausedSession = null
-    lastActivityAt = now
-    lastAccountedAt = now
-    isTrackingActive = true
-    isTrackingIdle = false
-
-    const wasSent = sendRuntimeMessage(
-      {
-        type: 'scrimba:tracking-started',
-        sessionId,
-        url: window.location.href,
-        title: getPageTitle(),
-        startedAt,
-        isActive: true,
-        lastActivityAt: new Date(lastActivityAt).toISOString(),
-      },
-      (response) => {
-        if (
-          currentSessionId !== sessionId ||
-          !isRuntimeResponse(response) ||
-          !response.ok
-        ) {
-          markSessionStopped(sessionId)
-          return
-        }
-
+    const version = resetVersion
+    startingSession = true
+    // Read the reset generation before capturing this session. A reset racing
+    // this read is caught again by the worker and by storage.onChanged.
+    void getStorageValue('trackingState', { epoch: 'initial' }).then((state) => {
+      if (!isPageActive() || currentSessionId || version !== resetVersion) return
+      trackingEpoch = state.epoch
+      const reusable = pausedSession && now - pausedSession.stoppedAt <= sessionResumeGraceMs
+        ? pausedSession : null
+      const sessionId = reusable?.id ?? createSessionId()
+      currentSessionId = sessionId
+      currentSessionStartedAt = reusable?.startedAt ?? new Date(now).toISOString()
+      pausedSession = null
+      lastActivityAt = now
+      lastAccountedAt = now
+      lastQueuedAt = now
+      isTrackingActive = true
+      isTrackingIdle = false
+      void queueTrackingUpdate('start', sessionId, now).then((reply) => {
+        if (currentSessionId !== sessionId) return
+        if (!reply.ok) { markSessionStopped(sessionId); return }
         isWidgetTimerRunning = true
-        startTrackingTick()
         refreshWidget()
-      },
-    )
-
-    if (!wasSent) {
-      markSessionStopped(sessionId)
-    }
+      })
+      // Capture intervals while delivery is interrupted; the durable outbox,
+      // rather than a successful reply, controls when the next interval starts.
+      startTrackingTick()
+    }).catch(reportStorageError).finally(() => { startingSession = false })
   }
 
   const stopActiveSession = (rememberForGrace = true): Promise<void> => {
-    if (!currentSessionId) {
-      return Promise.resolve()
-    }
-
-    const stoppedAt = Date.now()
+    if (!currentSessionId) return Promise.resolve()
+    const at = Date.now()
     const sessionId = currentSessionId
     const startedAt = currentSessionStartedAt
-    const activeSeconds =
-      isTrackingActive && !isTrackingIdle ? getUnsentActiveSeconds(stoppedAt) : 0
-
+    const from = Math.max(lastQueuedAt, lastAccountedAt)
+    // Queue the final interval before clearing local state. The worker can
+    // finish it even if a new tab takes ownership or this document closes.
+    const stopped = queueTrackingUpdate('stop', sessionId, at, from)
     currentSessionId = null
     currentSessionStartedAt = null
     isTrackingActive = false
     isTrackingIdle = false
     isWidgetTimerRunning = false
     lastAccountedAt = 0
+    lastQueuedAt = 0
     stopTrackingTick()
-
-    pausedSession =
-      rememberForGrace && startedAt
-        ? {
-            id: sessionId,
-            startedAt,
-            stoppedAt,
-          }
-        : null
-
-    return new Promise((resolve) => {
-      const wasSent = sendRuntimeMessage(
-        {
-          type: 'scrimba:tracking-stopped',
-          sessionId,
-          url: window.location.href,
-          title: getPageTitle(),
-          activeSeconds,
-          isMediaPlaying: isMediaPlaybackActive,
-          stoppedAt: new Date(stoppedAt).toISOString(),
-        },
-        () => {
-          resolve()
-        },
-      )
-
-      if (!wasSent) {
-        resolve()
-      }
-    })
+    pausedSession = rememberForGrace && startedAt ? { id: sessionId, startedAt, stoppedAt: at } : null
+    return stopped.then(() => {})
   }
 
-  const sendUserActivity = (eventType: UserActivityEventType) => {
+  const sendUserActivity = () => {
     const now = Date.now()
-
     if (!currentSessionId) {
       lastActivityMessageAt = now
       startActiveSession()
       return
     }
-
     lastActivityAt = now
     isTrackingIdle = false
-
-    if (
-      eventType === 'code-interaction' &&
-      now - lastActivityMessageAt < codeActivityMessageIntervalMs
-    ) {
-      return
-    }
-
-    const sessionId = currentSessionId
+    if (now - lastActivityMessageAt < codeActivityMessageIntervalMs) return
     lastActivityMessageAt = now
-
-    sendRuntimeMessage(
-      {
-        type: 'scrimba:user-activity',
-        sessionId,
-        url: window.location.href,
-        title: getPageTitle(),
-        eventType,
-        activityAt: new Date(now).toISOString(),
-      },
-      (response) => {
-        if (
-          currentSessionId === sessionId &&
-          isRuntimeResponse(response) &&
-          response.ok &&
-          isPageActive()
-        ) {
-          startTrackingTick()
-        }
-      },
-    )
+    void queueTrackingUpdate('activity', currentSessionId, now)
   }
 
   const getMediaElements = (): HTMLMediaElement[] => {
@@ -753,7 +686,7 @@ if (
     }
 
     lastMediaPlaybackHeartbeatAt = now
-    sendUserActivity('media-playback')
+    sendUserActivity()
   }
 
   const startMediaPlaybackMonitor = () => {
@@ -1628,6 +1561,18 @@ if (
       return
     }
 
+    const state = changes.trackingState?.newValue as { epoch?: string } | undefined
+    const previousState = changes.trackingState?.oldValue as { epoch?: string } | undefined
+    if (state?.epoch && state.epoch !== (trackingEpoch ?? previousState?.epoch ?? 'initial')) {
+      resetVersion++
+      trackingEpoch = state.epoch
+      delivery.cancel()
+      if (currentSessionId) markSessionStopped(currentSessionId)
+      pausedSession = null
+      widgetDisplayedActiveSeconds = 0
+      refreshWidget()
+    }
+
     const nextSettings = changes.userSettings?.newValue
 
     if (!nextSettings || typeof nextSettings !== 'object') {
@@ -1635,6 +1580,9 @@ if (
     }
 
     const { floatingWidgetVisible } = nextSettings as Partial<UserSettings>
+    if ((nextSettings as Partial<UserSettings>).trackingEnabled === false) {
+      void stopActiveSession(false).catch(reportStorageError)
+    }
 
     if (typeof floatingWidgetVisible === 'boolean') {
       setWidgetVisible(floatingWidgetVisible)
@@ -1924,17 +1872,9 @@ if (
           widgetDisplayedActiveSeconds,
           progress.activeSeconds,
         )
-      } else if (
-        progress.activeSeconds === 0 &&
-        todayActivity.sessions.length === 0 &&
-        !currentScrimbaPage?.isActive
-      ) {
-        widgetDisplayedActiveSeconds = 0
       } else {
-        widgetDisplayedActiveSeconds = Math.max(
-          widgetDisplayedActiveSeconds,
-          progress.activeSeconds,
-        )
+        // Once stopped or idle, replace the live preview with committed time.
+        widgetDisplayedActiveSeconds = progress.activeSeconds
       }
 
       if (!hasStorageError) {
@@ -1990,6 +1930,7 @@ if (
 
   const cleanup = () => {
     void stopActiveSession(false).catch(reportStorageError)
+    delivery.dispose()
     stopMediaPlaybackMonitor()
     stopWidgetRefresh()
     stopWidgetDisplay()
@@ -2030,7 +1971,7 @@ if (
 
   const handleCodeEditorActivity = (event: Event) => {
     if (isCodeEditorActivity(event)) {
-      sendUserActivity('code-interaction')
+      sendUserActivity()
     }
   }
 

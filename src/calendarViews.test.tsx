@@ -57,3 +57,18 @@ it('advances the live timer in the saved timezone when the host date differs', a
     unmount()
   } finally { vi.useRealTimers() }
 })
+
+it('reconciles the live preview to committed time when tracking becomes idle', async () => {
+  vi.useFakeTimers()
+  try {
+    const activity = createDailyActivity(new Date().toISOString().slice(0, 10))
+    const { result, rerender, unmount } = renderHook(({ running, value }) =>
+      useLiveActivitySeconds(value, running, 'UTC'),
+    { initialProps: { running: true, value: activity } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+    expect(result.current).toBe(5)
+    rerender({ running: false, value: { ...activity, activeSeconds: 2 } })
+    expect(result.current).toBe(2)
+    unmount()
+  } finally { vi.useRealTimers() }
+})

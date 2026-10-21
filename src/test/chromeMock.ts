@@ -25,9 +25,10 @@ export type ChromeMock = {
 }
 
 const clone = <Value>(value: Value): Value =>
-  JSON.parse(JSON.stringify(value)) as Value
+  value === undefined ? value : JSON.parse(JSON.stringify(value)) as Value
 
 const createDefaultStorage = (): StorageSchema => ({
+  trackingState: { epoch: 'initial', sessions: {} },
   extensionStatus: {
     installedAt: null,
     lastStartedAt: null,
@@ -138,6 +139,12 @@ export const installChromeMock = (
 
           callback?.()
           emitStorageChange(changes)
+        }),
+        remove: vi.fn((keys: string | string[], callback?: () => void) => {
+          for (const key of typeof keys === 'string' ? [keys] : keys) {
+            Reflect.deleteProperty(data, key)
+          }
+          callback?.()
         }),
       },
     },
