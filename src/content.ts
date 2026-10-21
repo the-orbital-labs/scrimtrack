@@ -77,8 +77,11 @@ const getLocalDateKey = (
 const getStorageValue = <Value>(
   key: string,
   fallbackValue: Value,
-): Promise<Value> =>
-  new Promise((resolve, reject) => {
+): Promise<Value> => {
+  if (['userSettings', 'dailyActivities', 'currentScrimbaPage', 'trackingState'].includes(key)) {
+    return requestWidgetMutation<Value>('readStorageValue', key)
+  }
+  return new Promise((resolve, reject) => {
     try {
       if (!isExtensionContextValid()) {
         throw new Error('Extension unavailable. Reload and try again.')
@@ -100,6 +103,7 @@ const getStorageValue = <Value>(
       reject(error)
     }
   })
+}
 
 const getUserSettings = async (): Promise<UserSettings> => ({
   ...defaultUserSettings,

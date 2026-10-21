@@ -1,3 +1,5 @@
+import { DataImport } from '../DataImport'
+import type { StorageSchema } from '../storage'
 import { useCallback, useEffect, useState } from 'react'
 import '../App.css'
 import { getActivityForDate, getCurrentStreakStatus, recalculateStreakStatus } from '../activity'
@@ -431,6 +433,24 @@ function Popup() {
     })
   }
 
+  const applyStorageSnapshot = (nextStorage: StorageSchema) => {
+    setSettings(nextStorage.userSettings)
+    setStreakStatus(nextStorage.streakStatus)
+    setPathProgress(nextStorage.pathProgress)
+    setTotalEstimatedHours(String(nextStorage.pathProgress.totalEstimatedHours))
+    setProgressPercentage(String(nextStorage.pathProgress.progressPercentage))
+    setDailyGoalMinutes(String(secondsToMinutes(nextStorage.userSettings.dailyGoalSeconds)))
+    setIdleTimeoutSeconds(nextStorage.userSettings.idleTimeoutSeconds)
+    setDailyGoalError(null)
+    setDailyGoalStatusText(null)
+    setIdleTimeoutStatusText(null)
+    setTrackingStatusMessage(null)
+    setPathError(null)
+    setPathSaveStatusText(null)
+    refreshTodayActivity()
+    refreshProjection()
+  }
+
   const resetData = (resetSettings: boolean) => {
     const message = resetSettings
       ? 'Delete all local activity, sessions, streaks, path settings, and app settings? This cannot be undone.'
@@ -442,26 +462,12 @@ function Popup() {
 
     setResetStatusText('Resetting local data...')
     void resetLocalData({ resetSettings }).then((nextStorage) => {
-      setSettings(nextStorage.userSettings)
-      setStreakStatus(nextStorage.streakStatus)
-      setPathProgress(nextStorage.pathProgress)
-      setTotalEstimatedHours(String(nextStorage.pathProgress.totalEstimatedHours))
-      setProgressPercentage(String(nextStorage.pathProgress.progressPercentage))
-      setDailyGoalMinutes(String(secondsToMinutes(nextStorage.userSettings.dailyGoalSeconds)))
-      setIdleTimeoutSeconds(nextStorage.userSettings.idleTimeoutSeconds)
-      setDailyGoalError(null)
-      setDailyGoalStatusText(null)
-      setIdleTimeoutStatusText(null)
-      setTrackingStatusMessage(null)
-      setPathError(null)
-      setPathSaveStatusText(null)
+      applyStorageSnapshot(nextStorage)
       setResetStatusText(
         resetSettings
           ? 'All local data and settings were reset.'
           : 'Activity data, sessions, and streaks were reset. Settings were kept.',
       )
-      refreshTodayActivity()
-      refreshProjection()
     }).catch(() => {
       setResetStatusText('Reset could not be completed. Some data may have changed. Reload to check and try again.')
     })
@@ -955,6 +961,7 @@ function Popup() {
               </span>
             ) : null}
           </div>
+          <DataImport onImported={applyStorageSnapshot} />
           <div className="reset-action-grid">
             <button
               type="button"

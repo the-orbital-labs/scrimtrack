@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Version 3 local storage and exports, validation at storage boundaries, and
+  atomic migration of existing local data before background work starts.
+- JSON import in the dashboard and popup with validation, a replacement preview,
+  cancellation, and compatibility with version 1 and 2 exports. Imports replace
+  history and settings, recalculate derived stats, and invalidate old tracking
+  messages without double-counting repeated imports.
+
 ### Fixed
 
 - Persist tracking updates in a local outbox and acknowledge time only after

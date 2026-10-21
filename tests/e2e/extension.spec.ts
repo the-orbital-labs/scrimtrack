@@ -301,7 +301,7 @@ test('exports the stored data as a readable JSON download', async ({
   const path = await download.path()
   expect(path).not.toBeNull()
   const data = JSON.parse(await readFile(path!, 'utf8'))
-  expect(data).toMatchObject({ app: 'scrimtrack', schemaVersion: 2, data: {
+  expect(data).toMatchObject({ app: 'scrimtrack', schemaVersion: 3, data: {
     userSettings: { timezone: 'UTC', dailyGoalSeconds: 1800 },
     pathProgress: { pathName: 'Frontend Developer Path' },
   } })
@@ -331,3 +331,41 @@ test('cancels reset safely and resets activity without changing settings', async
   })
   expect(Object.values(after.dailyActivities as object).every((day) => day.activeSeconds === 0 && day.sessions.length === 0)).toBe(true)
 })
+
+for (const path of ['popup.html', 'dashboard.html'] as const) {
+  test(`validates and confirms a replacement import through ${path}`, async ({
+    extensionContext, extensionId, extensionServiceWorker,
+  }) => {
+    const page = await openExtensionPage(extensionContext, extensionId, path)
+    if (path === 'popup.html') await page.locator('summary', { hasText: 'Settings' }).click()
+    const fileInput = page.getByLabel('Import JSON export')
+    const before = await getExtensionStorage(extensionServiceWorker, ['dailyActivities', 'userSettings'])
+    await fileInput.setInputFiles({ name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{bad') })
+    await expect(page.getByText(/not valid ScrimTrack JSON/)).toBeVisible()
+    expect(await getExtensionStorage(extensionServiceWorker, ['dailyActivities', 'userSettings'])).toEqual(before)
+    const data = createTestStorage()
+    const today = getLocalDateKey(new Date())
+    data.dailyActivities = { [today]: { date: today, activeSeconds: 600, goalSeconds: 300, goalCompleted: false, sessions: [] } }
+    data.userSettings = { ...(data.userSettings as object), dailyGoalSeconds: 300 }
+    const backup = { app: 'scrimtrack', schemaVersion: 2, exportedAt: new Date().toISOString(), data }
+    const file = { name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) }
+    await fileInput.setInputFiles(file)
+    await expect(page.getByText(/Ready to replace with 1 saved dates/)).toBeVisible()
+    expect(await getExtensionStorage(extensionServiceWorker, ['dailyActivities', 'userSettings'])).toEqual(before)
+    await page.getByRole('button', { name: 'Cancel import' }).click()
+    expect(await getExtensionStorage(extensionServiceWorker, ['dailyActivities', 'userSettings'])).toEqual(before)
+    await fileInput.setInputFiles(file)
+    await page.getByRole('button', { name: 'Replace local data with import' }).click()
+    await expect(page.getByText(/Import complete/)).toBeVisible()
+    const after = await getExtensionStorage(extensionServiceWorker, ['dailyActivities', 'userSettings', 'storageVersion'])
+    expect(after).toMatchObject({ storageVersion: 3, userSettings: { dailyGoalSeconds: 300 },
+      dailyActivities: { [today]: { activeSeconds: 600, goalCompleted: true } } })
+    expect(Object.keys(after.dailyActivities as object)).toEqual([today])
+    if (path === 'popup.html') await expect(page.getByLabel("Today's progress")).toContainText('10m 00s')
+    else await expect(page.getByText('10m 00s / 5m 00s')).toBeVisible()
+    await fileInput.setInputFiles(file)
+    await page.getByRole('button', { name: 'Replace local data with import' }).click()
+    await expect(page.getByText(/Import complete/)).toBeVisible()
+    expect((await getExtensionStorage(extensionServiceWorker, 'dailyActivities')).dailyActivities).toEqual(after.dailyActivities)
+  })
+}

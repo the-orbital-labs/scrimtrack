@@ -951,6 +951,20 @@
   gap: 8px;
 }
 
+.data-import {
+  display: grid;
+  gap: 12px;
+  margin-block: 16px;
+}
+
+.data-import input[type='file'] {
+  max-width: 100%;
+}
+
+.data-import button {
+  margin: 4px 8px 4px 0;
+}
+
 .goal-settings-header strong,
 .settings-current-value strong {
   color: var(--text-h);
