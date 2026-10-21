@@ -12,10 +12,11 @@ type LiveActivitySnapshot = {
 export const useLiveActivitySeconds = (
   activity: DailyActivity | null,
   isRunning: boolean,
+  timezone?: string,
 ): number => {
   const [liveActivity, setLiveActivity] = useState<LiveActivitySnapshot>(() => ({
     activeSeconds: activity?.activeSeconds ?? 0,
-    date: activity?.date ?? getLocalDateKey(),
+    date: activity?.date ?? getLocalDateKey(new Date(), timezone),
     isRunning,
     sourceActivity: activity,
   }))
@@ -52,7 +53,7 @@ export const useLiveActivitySeconds = (
     }
 
     const intervalId = window.setInterval(() => {
-      const today = getLocalDateKey()
+      const today = getLocalDateKey(new Date(), timezone)
 
       setLiveActivity((currentActivity) => ({
         ...currentActivity,
@@ -67,7 +68,7 @@ export const useLiveActivitySeconds = (
     return () => {
       window.clearInterval(intervalId)
     }
-  }, [isRunning])
+  }, [isRunning, timezone])
 
   if (!activity || liveActivity.date !== activity.date) {
     return activity?.activeSeconds ?? 0

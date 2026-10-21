@@ -1,4 +1,5 @@
-import { getLocalDateKey } from './activity'
+import { addCalendarDays, calendarDayCount, getDateKey } from './calendar'
+import { getUserSettings } from './settings'
 import { getPathProgress } from './pathProgress'
 import { getStorageValue } from './storage'
 import type { AverageWindowDays } from './storage'
@@ -30,7 +31,6 @@ export type PathHourEstimate = {
   remainingHours: number
 }
 
-const dayInMilliseconds = 24 * 60 * 60 * 1000
 const finishDateFormatter = new Intl.DateTimeFormat(undefined, {
   month: 'long',
   day: 'numeric',
@@ -138,42 +138,20 @@ const parseLocalDateKey = (dateKey: string): Date => {
   return new Date(year, month - 1, day)
 }
 
-const getInclusiveDayCount = (startDate: string, endDate: string): number =>
-  Math.max(
-    1,
-    Math.floor(
-      (parseLocalDateKey(endDate).getTime() -
-        parseLocalDateKey(startDate).getTime()) /
-        dayInMilliseconds,
-    ) + 1,
-  )
-
-const getWindowStartDate = (
-  windowDays: AverageWindowDays,
-  today: Date,
-): string | null => {
-  if (windowDays === 'all') {
-    return null
-  }
-
-  return getLocalDateKey(
-    new Date(today.getTime() - (windowDays - 1) * dayInMilliseconds),
-  )
-}
-
 export const getAveragePace = async (
   today: Date = new Date(),
 ): Promise<AveragePace> => {
   const pathProgress = await getPathProgress()
   const dailyActivities = await getStorageValue('dailyActivities')
-  const todayKey = getLocalDateKey(today)
+  const { timezone } = await getUserSettings()
+  const todayKey = getDateKey(today, timezone)
   const activityDates = Object.keys(dailyActivities)
     .filter((date) => date <= todayKey)
     .sort()
   const windowStartKey =
     pathProgress.averageWindowDays === 'all'
       ? activityDates[0] ?? null
-      : getWindowStartDate(pathProgress.averageWindowDays, today)
+      : addCalendarDays(todayKey, -(pathProgress.averageWindowDays - 1))
   const totalActiveSeconds = Object.values(dailyActivities)
     .filter((activity) => {
       if (activity.date > todayKey) {
@@ -190,7 +168,7 @@ export const getAveragePace = async (
   const dayCount =
     pathProgress.averageWindowDays === 'all'
       ? windowStartKey
-        ? getInclusiveDayCount(windowStartKey, todayKey)
+        ? calendarDayCount(windowStartKey, todayKey)
         : 0
       : pathProgress.averageWindowDays
 
@@ -210,18 +188,20 @@ export const getPathProjection = async (
 ): Promise<PathProjection> => {
   const pathProgress = await getPathProgress()
   const pace = await getAveragePace(today)
+  const todayKey = pace.endDate
+  const calendarToday = parseLocalDateKey(todayKey)
   const { completedHours, remainingHours } = calculatePathHourEstimate(
     pathProgress.totalEstimatedHours,
     pathProgress.progressPercentage,
   )
 
   if (remainingHours <= 0) {
-    const finishDate = getLocalDateKey(today)
+    const finishDate = todayKey
     const projectionMessages = getProjectionMessages(
-      today,
+      calendarToday,
       0,
       formatFinishDate(finishDate),
-      today,
+      calendarToday,
     )
 
     return {
@@ -241,7 +221,7 @@ export const getPathProjection = async (
   const averageDailySeconds = pace.averageDailySeconds
 
   if (averageDailySeconds <= 0) {
-    const projectionMessages = getProjectionMessages(today, null, null, null)
+    const projectionMessages = getProjectionMessages(calendarToday, null, null, null)
 
     return {
       averageDailySeconds: 0,
@@ -258,11 +238,11 @@ export const getPathProjection = async (
   }
 
   const daysRemaining = Math.ceil((remainingHours * 60 * 60) / averageDailySeconds)
-  const finishDate = new Date(today.getTime() + daysRemaining * dayInMilliseconds)
-  const finishDateKey = getLocalDateKey(finishDate)
+  const finishDateKey = addCalendarDays(todayKey, daysRemaining)
+  const finishDate = parseLocalDateKey(finishDateKey)
   const finishDateLabel = formatFinishDate(finishDateKey)
   const projectionMessages = getProjectionMessages(
-    today,
+    calendarToday,
     daysRemaining,
     finishDateLabel,
     finishDate,
