@@ -32,7 +32,7 @@ export const useLiveActivitySeconds = (
       activity.sessions.length === 0
     const activityDate = activity?.date ?? liveActivity.date
     const activeSeconds =
-      liveActivity.date !== activityDate || wasActivityReset
+      liveActivity.date !== activityDate || wasActivityReset || !isRunning
         ? (activity?.activeSeconds ?? 0)
         : Math.max(
             liveActivity.activeSeconds,

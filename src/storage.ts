@@ -1,5 +1,6 @@
-import { assertStorageHost, defineStorageMutation, settleStorageWrites } from './storageMutations'
+import { assertStorageHost, defineStorageMutation } from './storageMutations'
 import type { ScrimbaCourseProgress } from './scrimbaCourse'
+import type { TrackingState } from './trackingProtocol'
 
 export type ExtensionStatus = {
   installedAt: string | null
@@ -67,6 +68,7 @@ export type PathProgress = {
 }
 
 export type StorageSchema = {
+  trackingState: TrackingState
   extensionStatus: ExtensionStatus
   currentScrimbaPage: CurrentScrimbaPage
   dailyActivities: Record<string, DailyActivity>
@@ -89,6 +91,7 @@ export type LocalDataExport = {
 }
 
 const defaultStorageValues: StorageSchema = {
+  trackingState: { epoch: 'initial', sessions: {} },
   extensionStatus: {
     installedAt: null,
     lastStartedAt: null,
@@ -214,6 +217,10 @@ export const setStorageValue = <Key extends StorageKey>(
   key: Key,
   value: StorageSchema[Key],
 ): Promise<boolean> =>
+  setStorageValues({ [key]: value })
+
+// Commit related values and their delivery receipt in the same storage operation.
+export const setStorageValues = (values: Partial<StorageSchema>): Promise<boolean> =>
   new Promise((resolve, reject) => {
     try {
       assertStorageHost()
@@ -221,18 +228,18 @@ export const setStorageValue = <Key extends StorageKey>(
         throw new Error('Extension unavailable. Reload the page and try again.')
       }
 
-      chrome.storage.local.set({ [key]: value }, () => {
+      chrome.storage.local.set(values, () => {
         try {
           if (chrome.runtime.lastError) {
             throw new Error(chrome.runtime.lastError.message ?? 'Storage write failed')
           }
           resolve(true)
         } catch (error) {
-          reject(new StorageError('write', key, error))
+          reject(new StorageError('write', Object.keys(values)[0] as StorageKey, error))
         }
       })
     } catch (error) {
-      reject(new StorageError('write', key, error))
+      reject(new StorageError('write', Object.keys(values)[0] as StorageKey, error))
     }
   })
 
@@ -261,6 +268,7 @@ export const resetLocalData = defineStorageMutation(
       : await getStorageValue('pathProgress')
 
     const nextStorage: StorageSchema = {
+      trackingState: { epoch: crypto.randomUUID(), sessions: {} },
       extensionStatus: await getStorageValue('extensionStatus'),
       currentScrimbaPage: getDefaultStorageValue('currentScrimbaPage'),
       dailyActivities: getDefaultStorageValue('dailyActivities'),
@@ -269,13 +277,7 @@ export const resetLocalData = defineStorageMutation(
       pathProgress: nextPathProgress,
     }
 
-    await settleStorageWrites([
-      setStorageValue('currentScrimbaPage', nextStorage.currentScrimbaPage),
-      setStorageValue('dailyActivities', nextStorage.dailyActivities),
-      setStorageValue('streakStatus', nextStorage.streakStatus),
-      setStorageValue('userSettings', nextStorage.userSettings),
-      setStorageValue('pathProgress', nextStorage.pathProgress),
-    ])
+    await setStorageValues(nextStorage)
 
     return nextStorage
   },
@@ -301,6 +303,7 @@ export const getLocalDataExport = async (): Promise<LocalDataExport> => {
   return {
     app: 'scrimtrack',
     data: {
+      trackingState: await getStorageValue('trackingState'),
       extensionStatus,
       currentScrimbaPage,
       dailyActivities,

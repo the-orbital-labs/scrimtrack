@@ -35,7 +35,7 @@ type ActivitySegment = {
 
 export const getLocalDateKey = getDateKey
 
-const splitIntervalByLocalDate = (
+export const splitIntervalByLocalDate = (
   startedAt: string,
   endedAt: string,
   timezone: string,
@@ -94,7 +94,7 @@ const withGoalCompletion = (activity: DailyActivity): DailyActivity => ({
     activity.goalSeconds > 0 && activity.activeSeconds >= activity.goalSeconds,
 })
 
-const withUpdatedSession = (
+export const withUpdatedSession = (
   activity: DailyActivity,
   segment: ActivitySegment,
   sessionId?: string,

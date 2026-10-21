@@ -12,6 +12,10 @@ describe('background storage failure responses', () => {
   const sessionId = 'test-session'
   const url = 'https://scrimba.com/test'
   const startedAt = '2026-10-20T12:00:00.000Z'
+  const update = (kind: string, sequence: number, from = startedAt, at = from) => ({
+    type: 'scrimba:tracking-update', epoch: 'initial', sessionId, sequence,
+    kind, from, at, url, title: null, isMediaPlaying: false,
+  })
 
   beforeEach(async () => {
     vi.resetModules()
@@ -32,6 +36,7 @@ describe('background storage failure responses', () => {
     })
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     await import('./background')
+    await new Promise((resolve) => listener(update('start', 1), {}, resolve))
   })
 
   afterEach(uninstallChromeMock)
@@ -39,11 +44,7 @@ describe('background storage failure responses', () => {
   it.each(['get', 'set'] as const)('returns a failure response when session %s fails', async (operation) => {
     failNextStorageOperation(operation)
     const response = vi.fn()
-    expect(listener({
-      type: 'scrimba:tracking-started',
-      sessionId, url, title: null, startedAt,
-      isActive: true, lastActivityAt: startedAt,
-    }, {}, response)).toBe(true)
+    expect(listener(update('start', 2), {}, response)).toBe(true)
 
     await vi.waitFor(() => expect(response).toHaveBeenCalledWith({
       ok: false, error: 'storage-failure',
@@ -62,12 +63,7 @@ describe('background storage failure responses', () => {
       }
     })
     const response = vi.fn()
-    listener({
-      type: 'scrimba:activity-pulse',
-      sessionId, url, title: null,
-      activeSeconds: 5,
-      recordedAt: '2026-10-20T12:02:02.000Z',
-    }, {}, response)
+    listener(update('pulse', 2, '2026-10-20T12:01:57.000Z', '2026-10-20T12:02:02.000Z'), {}, response)
 
     await vi.waitFor(() => expect(response).toHaveBeenCalledWith({
       ok: false, error: 'storage-failure',
@@ -89,11 +85,10 @@ describe('background storage failure responses', () => {
   }
 
   it('preserves both overlapping activity pulses and their session totals', async () => {
-    const pulse = (seconds: number) => ({
-      type: 'scrimba:activity-pulse', sessionId, url, title: null,
-      activeSeconds: seconds, recordedAt: '2026-10-20T12:00:20.000Z',
-    })
-    const responses = await Promise.all([send(pulse(5)), send(pulse(7))])
+    const responses = await Promise.all([
+      send(update('pulse', 2, startedAt, '2026-10-20T12:00:05.000Z')),
+      send(update('pulse', 3, '2026-10-20T12:00:05.000Z', '2026-10-20T12:00:12.000Z')),
+    ])
     expect(responses).toEqual([
       expect.objectContaining({ ok: true }), expect.objectContaining({ ok: true }),
     ])
@@ -131,8 +126,7 @@ describe('background storage failure responses', () => {
     const client = await connectClient()
     const storage = await import('./storage')
     await Promise.all([
-      send({ type: 'scrimba:activity-pulse', sessionId, url, title: null,
-        activeSeconds: 5, recordedAt: '2026-10-20T12:00:05.000Z' }),
+      send(update('pulse', 2, startedAt, '2026-10-20T12:00:05.000Z')),
       storage.resetLocalData({ resetSettings: true }),
       client.saveIdleTimeout(300),
     ])

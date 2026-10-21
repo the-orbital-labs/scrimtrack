@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+
+- Persist tracking updates in a local outbox and acknowledge time only after
+  saving its receipt and totals. Interrupted deliveries retry without counting
+  the same interval twice, including after a worker restart or tab switch.
+- Invalidate pending tracking updates when resetting data, and refresh open
+  views immediately so old sessions cannot restore deleted activity.
+
 ## [0.3.0] - 2026-08-21
 
 ### Added

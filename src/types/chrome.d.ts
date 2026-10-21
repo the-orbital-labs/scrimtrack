@@ -52,6 +52,7 @@ declare const chrome: {
         callback: (items: Record<string, unknown>) => void,
       ) => void
       set: (items: Record<string, unknown>, callback?: () => void) => void
+      remove: (keys: string | string[], callback?: () => void) => void
     }
   }
   tabs: {
