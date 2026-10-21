@@ -24,7 +24,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "check": "npm run lint && npm run test && npm run build && npm run test:e2e",
+    "check": "npm run lint && npm run test && npm run test:e2e",
     "preview": "vite preview"
   },
   "dependencies": {

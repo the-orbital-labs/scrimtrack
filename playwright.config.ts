@@ -4,6 +4,8 @@ import process from 'node:process'
 const isCi = Boolean(process.env.CI)
 
 export default defineConfig({
+  // Build even when Playwright is invoked directly; never test stale dist files.
+  globalSetup: './tests/e2e/globalSetup.ts',
   expect: {
     timeout: 5_000,
   },

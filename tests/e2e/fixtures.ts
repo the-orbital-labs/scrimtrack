@@ -25,7 +25,7 @@ type ExtensionFixtures = {
 const extensionPath = resolve('dist')
 
 export const test = base.extend<ExtensionFixtures>({
-  extensionContext: async ({ headless, playwright }, provide) => {
+  extensionContext: async ({ headless, playwright }, provide, testInfo) => {
     const context = await playwright.chromium.launchPersistentContext('', {
       args: [
         `--disable-extensions-except=${extensionPath}`,
@@ -33,18 +33,37 @@ export const test = base.extend<ExtensionFixtures>({
       ],
       channel: 'chromium',
       headless,
+      timezoneId: 'UTC',
     })
 
     context.setDefaultNavigationTimeout(15_000)
     context.setDefaultTimeout(5_000)
 
-    await provide(context)
-    await context.close()
+    const diagnostics: string[] = []
+    context.on('console', (message) => diagnostics.push(`[${message.type()}] ${message.text()}`))
+    context.on('weberror', (error) => diagnostics.push(error.error().stack ?? error.error().message))
+    await context.tracing.start({ screenshots: true, snapshots: true, sources: true })
+    try {
+      await provide(context)
+    } finally {
+      if (testInfo.status !== testInfo.expectedStatus) {
+        const tracePath = testInfo.outputPath('trace.zip')
+        await context.tracing.stop({ path: tracePath })
+        await testInfo.attach('trace', { path: tracePath, contentType: 'application/zip' })
+        await testInfo.attach('browser-log', { body: diagnostics.join('\n'), contentType: 'text/plain' })
+      } else {
+        await context.tracing.stop()
+      }
+      await context.close()
+    }
   },
   extensionServiceWorker: async ({ extensionContext }, provide) => {
     const serviceWorker =
-      extensionContext.serviceWorkers()[0] ??
-      (await extensionContext.waitForEvent('serviceworker'))
+      extensionContext.serviceWorkers().find((worker) => worker.url().startsWith('chrome-extension://')) ??
+      (await extensionContext.waitForEvent('serviceworker', {
+        predicate: (worker) => worker.url().startsWith('chrome-extension://'),
+        timeout: 15_000,
+      }))
 
     await expect
       .poll(() =>
@@ -62,8 +81,23 @@ export const test = base.extend<ExtensionFixtures>({
               'version' in extensionStatus,
           )
         }),
+        { message: 'Extension installation must initialize local storage', timeout: 15_000 },
       )
       .toBe(true)
+
+    // extensionStatus is written alongside other initialization writes. Its
+    // presence alone does not mean the mutation queue has finished. A real
+    // page-to-worker round trip waits behind initialization before we seed data.
+    const bootstrap = await extensionContext.newPage()
+    await bootstrap.goto(`chrome-extension://${new URL(serviceWorker.url()).host}/popup.html`)
+    const response = await bootstrap.evaluate(() => new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: 'storage:mutate', command: 'saveTimezone', args: ['UTC'] }, (result) => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message))
+        else resolve(result)
+      })
+    }))
+    expect(response).toMatchObject({ ok: true })
+    await bootstrap.close()
 
     await provide(serviceWorker)
   },

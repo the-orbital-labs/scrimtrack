@@ -1,4 +1,5 @@
 import type { BrowserContext } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
 import {
   expect,
   getExtensionStorage,
@@ -7,9 +8,9 @@ import {
 } from './fixtures'
 
 const getLocalDateKey = (date: Date): string => {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
 
   return `${year}-${month}-${day}`
 }
@@ -17,7 +18,7 @@ const getLocalDateKey = (date: Date): string => {
 const addDays = (date: Date, amount: number): Date => {
   const nextDate = new Date(date)
 
-  nextDate.setDate(nextDate.getDate() + amount)
+  nextDate.setUTCDate(nextDate.getUTCDate() + amount)
 
   return nextDate
 }
@@ -66,7 +67,7 @@ const createTestStorage = (): Record<string, unknown> => {
       dailyGoalSeconds: 30 * 60,
       floatingWidgetVisible: true,
       idleTimeoutSeconds: 2 * 60,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      timezone: 'UTC',
       trackingEnabled: true,
     },
   }
@@ -228,4 +229,105 @@ test('injects the widget only on supported Scrimba pages', async ({
   await expect(
     unsupportedPage.locator('#scrimtrack-page-widget'),
   ).toHaveCount(0)
+})
+
+test('reports a worker storage failure and recovers on the next save', async ({
+  extensionContext, extensionId, extensionServiceWorker,
+}) => {
+  const popup = await openExtensionPage(extensionContext, extensionId, 'popup.html')
+  await popup.locator('summary', { hasText: 'Settings' }).click()
+  const goal = popup.getByRole('group', { name: 'Daily goal presets' })
+    .getByRole('button', { name: '45m' })
+  await extensionServiceWorker.evaluate(() => {
+    const originalSet = chrome.storage.local.set.bind(chrome.storage.local)
+    chrome.storage.local.set = () => {
+      chrome.storage.local.set = originalSet
+      throw new Error('Injected storage write failure')
+    }
+  })
+  await goal.click()
+  await expect(popup.getByText('Could not save the daily goal. Reload and try again.')).toBeVisible()
+  await expect(popup.getByText('Saved 45m 00s daily goal.')).toHaveCount(0)
+  expect((await getExtensionStorage(extensionServiceWorker, 'userSettings')).userSettings)
+    .toMatchObject({ dailyGoalSeconds: 1800 })
+  await goal.click()
+  await expect(popup.getByText('Saved 45m 00s daily goal.')).toBeVisible()
+  expect((await getExtensionStorage(extensionServiceWorker, 'userSettings')).userSettings)
+    .toMatchObject({ dailyGoalSeconds: 2700 })
+})
+
+test('refreshes open views when the saved timezone changes across a date boundary', async ({
+  extensionContext, extensionId, extensionServiceWorker,
+}) => {
+  const storage = createTestStorage()
+  await seedExtensionStorage(extensionServiceWorker, {
+    ...storage,
+    userSettings: { ...(storage.userSettings as object), timezone: 'America/Los_Angeles' },
+    dailyActivities: Object.fromEntries([
+      ['2026-03-08', 600], ['2026-03-09', 1200],
+    ].map(([date, activeSeconds]) => [date, {
+      date, activeSeconds, goalSeconds: 1800, goalCompleted: false, sessions: [],
+    }])),
+  })
+  const popup = await extensionContext.newPage()
+  const dashboard = await extensionContext.newPage()
+  for (const [page, path] of [[popup, 'popup.html'], [dashboard, 'dashboard.html']] as const) {
+    // UI clocks only: this test exercises calendar rendering, not time counting.
+    await page.clock.setFixedTime(new Date('2026-03-09T00:30:00Z'))
+    await page.goto(`chrome-extension://${extensionId}/${path}`)
+  }
+  await expect(popup.getByLabel("Today's progress")).toContainText('10m 00s')
+  await expect(dashboard.getByText('10m 00s / 30m 00s')).toBeVisible()
+  await popup.locator('summary', { hasText: 'Settings' }).click()
+  await popup.getByRole('textbox', { name: 'Timezone', exact: true }).fill('Asia/Tokyo')
+  await popup.getByRole('textbox', { name: 'Timezone', exact: true }).press('Tab')
+  await expect(popup.getByLabel("Today's progress")).toContainText('20m 00s')
+  await expect(dashboard.getByText('20m 00s / 30m 00s')).toBeVisible()
+  expect((await getExtensionStorage(extensionServiceWorker, 'dailyActivities')).dailyActivities)
+    .toEqual(expect.objectContaining({
+      '2026-03-08': expect.objectContaining({ activeSeconds: 600 }),
+      '2026-03-09': expect.objectContaining({ activeSeconds: 1200 }),
+    }))
+})
+
+test('exports the stored data as a readable JSON download', async ({
+  extensionContext, extensionId,
+}) => {
+  const dashboard = await openExtensionPage(extensionContext, extensionId, 'dashboard.html')
+  const downloadEvent = dashboard.waitForEvent('download')
+  await dashboard.getByRole('button', { name: 'Download JSON export' }).click()
+  const download = await downloadEvent
+  expect(download.suggestedFilename()).toMatch(/^scrimtrack-\d{4}-\d{2}-\d{2}\.json$/)
+  const path = await download.path()
+  expect(path).not.toBeNull()
+  const data = JSON.parse(await readFile(path!, 'utf8'))
+  expect(data).toMatchObject({ app: 'scrimtrack', schemaVersion: 2, data: {
+    userSettings: { timezone: 'UTC', dailyGoalSeconds: 1800 },
+    pathProgress: { pathName: 'Frontend Developer Path' },
+  } })
+  expect(Object.keys(data.data.dailyActivities)).toHaveLength(3)
+})
+
+test('cancels reset safely and resets activity without changing settings', async ({
+  extensionContext, extensionId, extensionServiceWorker,
+}) => {
+  const dashboard = await openExtensionPage(extensionContext, extensionId, 'dashboard.html')
+  const popup = await openExtensionPage(extensionContext, extensionId, 'popup.html')
+  const reset = dashboard.getByRole('button', { name: 'Reset activity only' })
+  const before = await getExtensionStorage(extensionServiceWorker, ['dailyActivities', 'userSettings', 'pathProgress'])
+  dashboard.once('dialog', (dialog) => dialog.dismiss())
+  await reset.click()
+  expect(await getExtensionStorage(extensionServiceWorker, ['dailyActivities', 'userSettings', 'pathProgress'])).toEqual(before)
+  dashboard.once('dialog', (dialog) => dialog.accept())
+  await reset.click()
+  await expect(dashboard.getByText('Activity data, sessions, and streaks were reset. Settings were kept.')).toBeVisible()
+  await expect(popup.getByLabel("Today's progress").getByText('0s', { exact: true })).toBeVisible()
+  const after = await getExtensionStorage(extensionServiceWorker, ['dailyActivities', 'userSettings', 'pathProgress', 'currentScrimbaPage', 'streakStatus'])
+  expect(after).toMatchObject({
+    currentScrimbaPage: null,
+    userSettings: before.userSettings,
+    pathProgress: before.pathProgress,
+    streakStatus: { currentStreak: 0, longestStreak: 0 },
+  })
+  expect(Object.values(after.dailyActivities as object).every((day) => day.activeSeconds === 0 && day.sessions.length === 0)).toBe(true)
 })
