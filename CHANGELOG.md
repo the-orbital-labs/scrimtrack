@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- Moved documentation screenshots out of the extension package into
+  `docs/screenshots`, reducing the built package by approximately 3.6 MiB.
+
+## [0.4.0] - 2026-10-22
+
 ### Added
 
 - Version 3 local storage and exports, validation at storage boundaries, and
@@ -15,6 +22,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   cancellation, and compatibility with version 1 and 2 exports. Imports replace
   history and settings, recalculate derived stats, and invalidate old tracking
   messages without double-counting repeated imports.
+- Added unit, React component, and Chrome extension end-to-end test suites.
+- Added a support policy with guidance for bug reports, feature requests, and
+  usage questions.
 
 ### Changed
 
@@ -24,6 +34,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Serialize storage mutations in the background worker to prevent concurrent
+  updates from overwriting each other, and make storage failures visible.
+- Respect local timezones and calendar boundaries in activity totals, streaks,
+  heatmaps, and finish-date projections.
+- Stabilize activity refresh callbacks and avoid cloning Scrimba custom elements
+  when adding the embedded dashboard tab.
 - Persist tracking updates in a local outbox and acknowledge time only after
   saving its receipt and totals. Interrupted deliveries retry without counting
   the same interval twice, including after a worker restart or tab switch.

@@ -21,15 +21,16 @@ Privacy features:
 - No external analytics are enabled by default.
 - The extension only runs on `https://scrimba.com/*` and `https://v2.scrimba.com/*`.
 
-You can export your local data as JSON or reset it from the extension settings.
+You can export and import your local data as JSON or reset it from the extension settings.
 
-## What's New in Version 0.3.0
+## What's New in Version 0.4.0
 
-- Select a Scrimba learning path or discovered course and sync visible course progress.
-- See completed seconds throughout the tracker, dashboard, popup, summaries, and heatmap tooltips.
-- Close the floating tracker when it is not needed and reopen it from the dashboard.
-- Get more accurate active-time tracking focused on lesson playback and code-editor interaction.
-- Use the streamlined dashboard layout and shorter tracking timeout options.
+- Import JSON backups from the dashboard or popup, with validation and a preview before replacing local data.
+- Get more reliable time tracking with saved pending updates and retries that prevent duplicate counting.
+- Keep activity totals, streaks, heatmaps, and finish-date projections accurate across local calendar boundaries.
+- See storage errors clearly and upgrade existing local data automatically with validation.
+- Reset data without pending tracking updates restoring deleted activity.
+- Enjoy more reliable embedded dashboard integration and expanded automated test coverage.
 - No new permissions are required.
 
 ## Permissions

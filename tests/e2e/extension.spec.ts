@@ -53,7 +53,7 @@ const createTestStorage = (): Record<string, unknown> => {
     extensionStatus: {
       installedAt: today.toISOString(),
       lastStartedAt: today.toISOString(),
-      version: '0.3.0',
+      version: '0.4.0',
     },
     pathProgress: {
       averageWindowDays: 7,
