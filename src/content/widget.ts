@@ -18,8 +18,39 @@ export const createWidget = () => {
         right: max(16px, env(safe-area-inset-right));
         bottom: max(16px, env(safe-area-inset-bottom));
         z-index: 2147483647;
-        color-scheme: light;
+        color-scheme: light dark;
+        --widget-surface: light-dark(#ffffff, #1a1f27);
+        --widget-inset: light-dark(#f8fafc, #12151b);
+        --widget-text: light-dark(#101828, #f8fafc);
+        --widget-secondary: light-dark(#344054, #c0c8d2);
+        --widget-muted: light-dark(#667085, #9aa5b3);
+        --widget-border: light-dark(rgba(22, 33, 52, 0.16), #2b333f);
+        --widget-track: light-dark(#e4e7ec, #2b333f);
+        --widget-hover: light-dark(#6d28d9, #c4b5fd);
+        --widget-focus: light-dark(rgba(124, 58, 237, 0.28), #a78bfa);
+        --widget-green: light-dark(#16a34a, #34d399);
+        --widget-red: light-dark(#b42318, #f87171);
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      /* Follow explicit page themes; otherwise use the browser's color preference.
+         CSS keeps both widget sizes in sync when the theme changes. */
+      :host-context(html.dark),
+      :host-context(body.dark),
+      :host-context(html[data-theme="dark"]),
+      :host-context(body[data-theme="dark"]),
+      :host-context(html[data-color-mode="dark"]),
+      :host-context(body[data-color-mode="dark"]) {
+        color-scheme: dark;
+      }
+
+      :host-context(html.light),
+      :host-context(body.light),
+      :host-context(html[data-theme="light"]),
+      :host-context(body[data-theme="light"]),
+      :host-context(html[data-color-mode="light"]),
+      :host-context(body[data-color-mode="light"]) {
+        color-scheme: light;
       }
 
       :host([hidden]) {
@@ -34,12 +65,12 @@ export const createWidget = () => {
         display: grid;
         gap: 10px;
         width: min(312px, calc(100vw - 32px));
-        border: 1px solid rgba(22, 33, 52, 0.16);
+        border: 1px solid var(--widget-border);
         border-radius: 8px;
         padding: 12px;
-        background: #ffffff;
+        background: var(--widget-surface);
         box-shadow: 0 18px 42px rgba(12, 18, 31, 0.22);
-        color: #101828;
+        color: var(--widget-text);
         font: inherit;
       }
 
@@ -92,7 +123,7 @@ export const createWidget = () => {
         align-items: center;
         gap: 6px;
         min-width: 0;
-        color: #344054;
+        color: var(--widget-secondary);
         font-size: 12px;
         font-weight: 800;
         white-space: nowrap;
@@ -102,11 +133,11 @@ export const createWidget = () => {
         width: 8px;
         height: 8px;
         border-radius: 999px;
-        background: #16a34a;
+        background: var(--widget-green);
       }
 
       .dot.is-paused {
-        background: #b42318;
+        background: var(--widget-red);
       }
 
       .dot.is-idle {
@@ -119,10 +150,10 @@ export const createWidget = () => {
         width: 28px;
         height: 28px;
         place-items: center;
-        border: 1px solid rgba(22, 33, 52, 0.16);
+        border: 1px solid var(--widget-border);
         border-radius: 6px;
-        background: #f8fafc;
-        color: #101828;
+        background: var(--widget-inset);
+        color: var(--widget-text);
         font: inherit;
         font-size: 16px;
         line-height: 1;
@@ -131,12 +162,12 @@ export const createWidget = () => {
 
       .icon-button:hover {
         border-color: #7c3aed;
-        color: #6d28d9;
+        color: var(--widget-hover);
       }
 
       .icon-button:focus-visible,
       .button:focus-visible {
-        outline: 3px solid rgba(124, 58, 237, 0.28);
+        outline: 3px solid var(--widget-focus);
         outline-offset: 2px;
       }
 
@@ -181,18 +212,18 @@ export const createWidget = () => {
         display: grid;
         gap: 4px;
         min-width: 0;
-        border: 1px solid rgba(22, 33, 52, 0.12);
+        border: 1px solid var(--widget-border);
         border-radius: 7px;
         padding: 9px;
-        background: #f8fafc;
-        color: #667085;
+        background: var(--widget-inset);
+        color: var(--widget-muted);
         font-size: 12px;
         font-weight: 800;
       }
 
       .metric strong {
         overflow-wrap: anywhere;
-        color: #101828;
+        color: var(--widget-text);
         font-size: 20px;
         line-height: 1;
       }
@@ -200,7 +231,7 @@ export const createWidget = () => {
       .progress {
         display: grid;
         gap: 6px;
-        color: #667085;
+        color: var(--widget-muted);
         font-size: 12px;
         font-weight: 800;
       }
@@ -213,14 +244,14 @@ export const createWidget = () => {
       }
 
       .progress-label strong {
-        color: #101828;
+        color: var(--widget-text);
       }
 
       .track {
         overflow: hidden;
         height: 7px;
         border-radius: 999px;
-        background: #e4e7ec;
+        background: var(--widget-track);
       }
 
       .track span {
@@ -228,7 +259,7 @@ export const createWidget = () => {
         width: 0%;
         height: 100%;
         border-radius: inherit;
-        background: #16a34a;
+        background: var(--widget-green);
         transition: width 180ms ease;
       }
 
@@ -240,11 +271,11 @@ export const createWidget = () => {
 
       .button {
         min-height: 34px;
-        border: 1px solid rgba(22, 33, 52, 0.16);
+        border: 1px solid var(--widget-border);
         border-radius: 7px;
         padding: 7px 10px;
-        background: #ffffff;
-        color: #101828;
+        background: var(--widget-surface);
+        color: var(--widget-text);
         font: inherit;
         font-size: 13px;
         font-weight: 800;
@@ -259,7 +290,7 @@ export const createWidget = () => {
 
       .button:hover {
         border-color: #7c3aed;
-        color: #6d28d9;
+        color: var(--widget-hover);
       }
 
       .button.primary:hover {
