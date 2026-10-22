@@ -372,28 +372,18 @@ export function createEmbeddedDashboard(listenerController: AbortController) {
   }
 
   const createDashboardTab = (issuesTab: HTMLElement): HTMLElement => {
-    const tab = issuesTab.cloneNode(false) as HTMLElement
-
-    Array.from(tab.attributes).forEach((attribute) => {
-      if (attribute.name !== 'class' && attribute.name !== 'role') {
-        tab.removeAttribute(attribute.name)
-      }
-    })
+    // Scrimba tabs can be custom elements whose renderers require app-owned
+    // state. Cloning one creates an uninitialized component on the host page.
+    const tab = document.createElement('button')
+    tab.type = 'button'
+    tab.className = issuesTab.className
+    tab.setAttribute('role', 'tab')
 
     tab.id = dashboardTabId
     tab.textContent = 'ScrimTrack'
     tab.setAttribute('aria-label', 'Open ScrimTrack dashboard')
     tab.setAttribute('aria-selected', 'false')
     tab.setAttribute('data-scrimtrack-dashboard-tab', '')
-
-    if (tab instanceof HTMLAnchorElement) {
-      tab.href = '#scrimtrack-dashboard'
-    } else if (tab instanceof HTMLButtonElement) {
-      tab.type = 'button'
-    } else {
-      tab.setAttribute('role', 'tab')
-      tab.tabIndex = 0
-    }
 
     tab.addEventListener('click', (event) => {
       event.preventDefault()
