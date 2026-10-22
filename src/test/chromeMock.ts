@@ -33,7 +33,7 @@ const createDefaultStorage = (): StorageSchema => ({
   extensionStatus: {
     installedAt: null,
     lastStartedAt: null,
-    version: '0.3.0',
+    version: '0.4.0',
   },
   currentScrimbaPage: null,
   dailyActivities: {},
@@ -86,7 +86,7 @@ export const installChromeMock = (
   const chromeMock = {
     runtime: {
       id: 'scrimtrack-test-extension',
-      getManifest: () => ({ version: '0.3.0' }),
+      getManifest: () => ({ version: '0.4.0' }),
       getURL: (path: string) => `chrome-extension://scrimtrack-test-extension/${path}`,
       openOptionsPage,
     },
