@@ -239,6 +239,42 @@ test('injects the widget only on supported Scrimba pages', async ({
   ).toHaveCount(0)
 })
 
+test('updates expanded and minimized widget colors with browser and page themes', async ({
+  extensionContext,
+}) => {
+  await extensionContext.route('https://scrimba.com/**', (route) => route.fulfill({
+    contentType: 'text/html',
+    body: '<!doctype html><title>Widget themes</title><main>Scrimba lesson</main>',
+  }))
+  const page = await extensionContext.newPage()
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.goto('https://scrimba.com/e2e-course')
+  const host = page.locator('#scrimtrack-page-widget')
+  const widget = host.getByLabel('ScrimTrack page widget')
+  await expect(widget).toBeVisible()
+  await expect(widget).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await expect(widget).toHaveCSS('background-color', 'rgb(26, 31, 39)')
+  await expect(widget).toHaveCSS('color', 'rgb(248, 250, 252)')
+  await expect(host.locator('.metric').first()).toHaveCSS('background-color', 'rgb(18, 21, 27)')
+  await expect(host.getByRole('button', { name: 'Dashboard' })).toHaveCSS('background-color', 'rgb(124, 58, 237)')
+  await host.getByRole('button', { name: 'Collapse widget' }).click()
+  await expect(host.getByRole('button', { name: 'Expand widget' })).toBeVisible()
+  await expect(widget).toHaveCSS('background-color', 'rgb(26, 31, 39)')
+
+  // An explicit page theme takes precedence over the browser preference.
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'light' })
+  await expect(widget).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
+  await expect(widget).toHaveCSS('background-color', 'rgb(26, 31, 39)')
+  await host.getByRole('button', { name: 'Expand widget' }).click()
+  await expect(widget).toHaveCSS('background-color', 'rgb(26, 31, 39)')
+  await page.evaluate(() => { delete document.documentElement.dataset.theme })
+  await expect(widget).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+})
+
 test('preserves widget position and restores Scrimba content after embedded dashboard navigation', async ({
   extensionContext, extensionServiceWorker,
 }) => {

@@ -28,6 +28,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Match expanded and minimized floating widget colors to dark and light themes,
+  including automatic updates when the theme changes.
 - Extracted content tracking, playback monitoring, widget UI, and embedded
   dashboard integration into focused modules. Separated dashboard data loading,
   activity calendar, and progress recap from the main view.
